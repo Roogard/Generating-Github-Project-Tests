@@ -1,0 +1,7 @@
+[
+  {"url": "https://github.com/pallets/click", "name": "click"},
+  {"url": "https://github.com/python-attrs/attrs", "name": "attrs"},
+  {"url": "https://github.com/more-itertools/more-itertools", "name": "more-itertools"},
+  {"url": "https://github.com/pytoolz/toolz", "name": "toolz"},
+  {"url": "https://github.com/mahmoud/boltons", "name": "boltons"}
+]
