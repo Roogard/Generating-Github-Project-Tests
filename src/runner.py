@@ -1,3 +1,14 @@
+"""
+Test runner.
+
+Executes the generated test files against the original repo and writes results.json.
+Use this after the main pipeline to see how many tests pass/fail.
+
+Usage:
+    uv run python -m src.runner --output ./outputs/algorithms
+
+Output: <output_dir>/results.json with pass/fail/error counts per function per test type.
+"""
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -1,3 +1,11 @@
+"""
+Output writer.
+
+Creates the output folder structure under <output_dir>/<repo_name>/:
+    meta.json                              — repo URL and name
+    functions/<name>_<i>/function.py       — original function source
+    test_cases/<name>_<i>/test_<type>.py   — generated tests per agent type
+"""
 import json
 import os
 
@@ -26,5 +34,8 @@ def write_tests(fn, test_results, output_dir, index):
     os.makedirs(folder, exist_ok=True)
 
     for test_type in ["statement", "block", "condition", "path", "bva", "ecp", "mutation"]:
+        content = test_results.get(f"{test_type}_tests", "")
+        if not content.strip():
+            continue
         with open(os.path.join(folder, f"test_{test_type}.{ext}"), "w", encoding="utf-8") as f:
-            f.write(test_results.get(f"{test_type}_tests", ""))
+            f.write(content)

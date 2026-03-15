@@ -1,3 +1,15 @@
+"""
+Test generation agents.
+
+Defines the 7 test agents (statement, block, condition, path, bva, ecp, mutation)
+and builds a LangGraph StateGraph that runs the selected agents in parallel.
+
+Each agent reads its system prompt from src/prompts/<name>.md, sends the function
+source to the DeepSeek LLM, and returns the generated test code.
+
+build_graph(selected_agents) — call with a list of agent names to run only those agents,
+                               or with None to run all 7.
+"""
 import os
 from pathlib import Path
 from typing import TypedDict
@@ -48,8 +60,12 @@ def call_agent(prompt_name, fn):
     system = (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
     user = build_user_message(fn)
     llm = get_llm()
-    response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
-    return response.content
+    try:
+        response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
+        return response.content
+    except Exception as e:
+        print(f"  [agent:{prompt_name}] error: {e}")
+        return ""
 
 
 def make_node(test_type):

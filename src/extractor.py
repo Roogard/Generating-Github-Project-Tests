@@ -1,3 +1,16 @@
+"""
+Function extractor.
+
+Clones a GitHub repo with git, then walks every .py file and uses tree-sitter to
+parse it and extract all top-level and nested function definitions.
+
+Each function is returned as a plain dict with:
+    name       — function name
+    source     — full source text of the function
+    language   — "python"
+    file_path  — relative path inside the repo
+    imports    — all import statements from the same file (used as context for test generation)
+"""
 import subprocess
 import os
 

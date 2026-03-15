@@ -10,6 +10,7 @@ dependencies = [
     "python-dotenv>=1.0",
     "langchain-openai>=0.3",
     "mutmut>=2.4",
+    "chromadb>=0.5",
 ]
 
 [project.scripts]

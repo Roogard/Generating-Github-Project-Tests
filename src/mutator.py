@@ -1,4 +1,26 @@
+"""
+Mutation testing engine.
+
+Measures test quality by generating mutants (small code changes) and checking
+which agents' tests can detect ("kill") them.
+
+Two mutation sources:
+    1. Custom AST mutants — operator swaps, constant tweaks, boolean flips, etc.
+       These are fast and don't require mutmut.
+    2. mutmut — industry-standard mutation testing tool (used if available).
+
+run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_file)
+    Generates all mutants once, then tests every (agent, mutant) combination
+    in parallel using a single ProcessPoolExecutor. Returns:
+        agent_kills   — dict[test_type -> set of mutant IDs killed]
+        agent_totals  — dict[test_type -> total mutant count]
+        mutant_count  — total number of mutants generated
+
+compute_unique_kills(agent_kills)
+    For each agent, counts mutants that ONLY that agent kills — its unique contribution.
+"""
 import ast
+import concurrent.futures
 import copy
 import json
 import os
@@ -10,7 +32,7 @@ import tempfile
 
 
 MUTMUT_TIMEOUT = 600
-CUSTOM_MUTANT_TIMEOUT = 30
+CUSTOM_MUTANT_TIMEOUT = 10
 
 IS_WINDOWS = platform.system() == "Windows"
 
@@ -70,8 +92,7 @@ def _run_mutmut_phase(function_file, test_file, repo_clone_dir, tmp):
     fn_basename = os.path.basename(function_file)
     fn_dest = os.path.join(src_dir, fn_basename)
     shutil.copy2(function_file, fn_dest)
-    with open(os.path.join(src_dir, "__init__.py"), "w") as f:
-        pass
+    open(os.path.join(src_dir, "__init__.py"), "w").close()
 
     test_basename = os.path.basename(test_file)
     test_dest = os.path.join(test_dir, test_basename)
@@ -354,14 +375,84 @@ def _replace_not_node(tree, lineno, col_offset):
                         return
 
 
+def _test_combination(args):
+    test_type, mid, mutated_source, test_file, target_file, repo_clone_dir = args
+    env = os.environ.copy()
+    env["PYTHONPATH"] = repo_clone_dir + os.pathsep + env.get("PYTHONPATH", "")
+
+    if target_file:
+        tmp_dir = tempfile.mkdtemp()
+        # Write at full relative path so package imports (e.g. "from algorithms.arrays.X import Y")
+        # resolve to the mutated file instead of the original in repo_clone_dir
+        rel_path = os.path.relpath(target_file, repo_clone_dir)
+        tmp_full = os.path.join(tmp_dir, rel_path)
+        os.makedirs(os.path.dirname(tmp_full), exist_ok=True)
+        with open(tmp_full, "w", encoding="utf-8") as f:
+            f.write(mutated_source)
+        # Create __init__.py for all parent directories so the package is importable
+        parent = os.path.dirname(rel_path)
+        if parent:
+            parts = parent.split(os.sep)
+            for i in range(1, len(parts) + 1):
+                init_file = os.path.join(tmp_dir, *parts[:i], "__init__.py")
+                if not os.path.exists(init_file):
+                    open(init_file, "w").close()
+        # Also write at bare basename for tests that import without the package path
+        tmp_base = os.path.join(tmp_dir, os.path.basename(target_file))
+        if tmp_base != tmp_full:
+            with open(tmp_base, "w", encoding="utf-8") as f:
+                f.write(mutated_source)
+        env["PYTHONPATH"] = tmp_dir + os.pathsep + env["PYTHONPATH"]
+    else:
+        tmp_dir = None
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", test_file, "-x", "-q", "--tb=no", "--no-header"],
+            capture_output=True, text=True, env=env, timeout=CUSTOM_MUTANT_TIMEOUT,
+        )
+        return test_type, mid, result.returncode != 0
+    except (subprocess.TimeoutExpired, Exception):
+        return test_type, mid, False
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _test_single_mutant(args):
+    mid, mutated_source, test_file, target_file, backup_source, repo_clone_dir = args
+    env = os.environ.copy()
+    env["PYTHONPATH"] = repo_clone_dir + os.pathsep + env.get("PYTHONPATH", "")
+
+    # Each worker gets its own temp copy to avoid file contention
+    if target_file:
+        tmp_dir = tempfile.mkdtemp()
+        tmp_target = os.path.join(tmp_dir, os.path.basename(target_file))
+        with open(tmp_target, "w", encoding="utf-8") as f:
+            f.write(mutated_source)
+        # Point PYTHONPATH to the temp dir first so imports resolve to mutated code
+        env["PYTHONPATH"] = tmp_dir + os.pathsep + env["PYTHONPATH"]
+    else:
+        tmp_dir = None
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", test_file, "-x", "-q", "--tb=no", "--no-header"],
+            capture_output=True, text=True, env=env, timeout=CUSTOM_MUTANT_TIMEOUT,
+        )
+        return mid, result.returncode != 0
+    except (subprocess.TimeoutExpired, Exception):
+        return mid, False
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def _run_custom_mutants(function_file, test_file, repo_clone_dir, source, start_id, original_file=None):
     mutants = _generate_custom_mutants(source)
     killed = set()
     survived = set()
 
-    # If we know the original file in the repo clone, overwrite it in-place
-    # so that test imports (e.g. "from algorithms.array.foo import foo") resolve
-    # to the mutated code. Restore after each test run.
     if original_file and os.path.exists(original_file):
         target_file = original_file
         with open(target_file, "r", encoding="utf-8") as f:
@@ -370,35 +461,63 @@ def _run_custom_mutants(function_file, test_file, repo_clone_dir, source, start_
         target_file = None
         backup_source = None
 
-    env = os.environ.copy()
-    env["PYTHONPATH"] = repo_clone_dir + os.pathsep + env.get("PYTHONPATH", "")
+    if not mutants:
+        return killed, survived, 0
 
+    worker_args = []
     for i, (tag, mutated_source, desc) in enumerate(mutants):
         mid = start_id + i
-        try:
-            if target_file:
-                # Overwrite the original file with mutated source
-                with open(target_file, "w", encoding="utf-8") as f:
-                    f.write(mutated_source)
+        worker_args.append((mid, mutated_source, test_file, target_file, backup_source, repo_clone_dir))
 
-            result = subprocess.run(
-                [sys.executable, "-m", "pytest", test_file, "-x", "-q", "--tb=no", "--no-header"],
-                capture_output=True, text=True, env=env, timeout=CUSTOM_MUTANT_TIMEOUT,
-            )
-
-            if result.returncode != 0:
+    max_workers = min(os.cpu_count() or 4, len(worker_args))
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_test_single_mutant, args): args[0] for args in worker_args}
+        for future in concurrent.futures.as_completed(futures):
+            mid, was_killed = future.result()
+            if was_killed:
                 killed.add(mid)
             else:
                 survived.add(mid)
-        except (subprocess.TimeoutExpired, Exception):
-            survived.add(mid)
-        finally:
-            # Restore original source after each mutant
-            if target_file and backup_source is not None:
-                with open(target_file, "w", encoding="utf-8") as f:
-                    f.write(backup_source)
 
     return killed, survived, len(mutants)
+
+
+def run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_file=None):
+    """Generate mutants once and test all agents against them in a single parallel pass.
+
+    test_files_dict: {test_type: test_file_path}
+    Returns: agent_kills {test_type: set}, agent_totals {test_type: int}, mutant_count int
+    """
+    mutants = _generate_custom_mutants(source)
+    agent_kills = {tt: set() for tt in test_files_dict}
+    agent_totals = {tt: 0 for tt in test_files_dict}
+
+    if not mutants:
+        return agent_kills, agent_totals, 0
+
+    if original_file and os.path.exists(original_file):
+        target_file = original_file
+    else:
+        target_file = None
+
+    worker_args = []
+    for i, (_tag, mutated_source, _desc) in enumerate(mutants):
+        mid = i + 1
+        for test_type, test_file in test_files_dict.items():
+            worker_args.append((test_type, mid, mutated_source, test_file, target_file, repo_clone_dir))
+
+    max_workers = min(os.cpu_count() or 4, len(worker_args), 16)
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_test_combination, args): args for args in worker_args}
+        for future in concurrent.futures.as_completed(futures):
+            test_type, mid, was_killed = future.result()
+            if was_killed:
+                agent_kills[test_type].add(mid)
+
+    for tt in test_files_dict:
+        agent_totals[tt] = len(mutants)
+
+    return agent_kills, agent_totals, len(mutants)
 
 
 def compute_unique_kills(all_agent_kills):
