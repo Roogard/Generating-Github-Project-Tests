@@ -4,7 +4,7 @@ from typing import TypedDict
 
 from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_anthropic import ChatAnthropic
+from langchain_openai import ChatOpenAI
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
@@ -23,8 +23,12 @@ class AgentState(TypedDict):
 
 
 def get_llm():
-    model = os.environ.get("LLM_MODEL", "claude-haiku-4-5")
-    return ChatAnthropic(model=model)
+    model = os.environ.get("LLM_MODEL", "deepseek-chat")
+    return ChatOpenAI(
+        model=model,
+        api_key=os.environ.get("DEEPSEEK_API_KEY"),
+        base_url="https://api.deepseek.com",
+    )
 
 
 def build_user_message(fn):
