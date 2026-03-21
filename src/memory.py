@@ -26,7 +26,8 @@ from datetime import datetime, timezone
 import chromadb
 from langchain_core.messages import SystemMessage, HumanMessage
 
-from src.agents import get_llm, TEST_TYPES
+from src.agents import get_llm
+from src.harness import HARNESS_TEST_TYPES as TEST_TYPES
 
 
 def get_db(path="data/memory_db"):

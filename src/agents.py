@@ -1,37 +1,10 @@
-"""
-Test generation agents.
-
-Defines the 7 test agents (statement, block, condition, path, bva, ecp, mutation)
-and builds a LangGraph StateGraph that runs the selected agents in parallel.
-
-Each agent reads its system prompt from src/prompts/<name>.md, sends the function
-source to the DeepSeek LLM, and returns the generated test code.
-
-build_graph(selected_agents) — call with a list of agent names to run only those agents,
-                               or with None to run all 7.
-"""
 import os
 from pathlib import Path
-from typing import TypedDict
 
-from langgraph.graph import StateGraph, START, END
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_openai import ChatOpenAI
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
-
-TEST_TYPES = ["statement", "block", "condition", "path", "bva", "ecp", "mutation"]
-
-
-class AgentState(TypedDict):
-    function_info: dict
-    statement_tests: str
-    block_tests: str
-    condition_tests: str
-    path_tests: str
-    bva_tests: str
-    ecp_tests: str
-    mutation_tests: str
 
 
 def get_llm():
@@ -68,18 +41,13 @@ def call_agent(prompt_name, fn):
         return ""
 
 
-def make_node(test_type):
-    def node(state):
-        return {f"{test_type}_tests": call_agent(test_type, state["function_info"])}
-    return node
-
-
-def build_graph(selected_agents=None):
-    builder = StateGraph(AgentState)
-
-    for tt in (selected_agents or TEST_TYPES):
-        builder.add_node(tt, make_node(tt))
-        builder.add_edge(START, tt)
-        builder.add_edge(tt, END)
-
-    return builder.compile()
+def call_agent_with_context(prompt_name, fn, extra_context):
+    system = (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
+    user = build_user_message(fn) + "\n\n" + extra_context
+    llm = get_llm()
+    try:
+        response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
+        return response.content
+    except Exception as e:
+        print(f"  [agent:{prompt_name}] error: {e}")
+        return ""

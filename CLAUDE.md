@@ -1,27 +1,214 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 1. System Overview
 
-## Project Goal
+This system generates unit tests for Python functions extracted from any GitHub repository. The previous architecture was a linear pipeline — extract functions, pick agents, generate tests once, done. No feedback, no refinement.
 
-Automatically generate unit tests for every function in any GitHub repository. Given a GitHub repo URL, the system extracts all Python functions via tree-sitter, generates unit tests per function using a multi-agent LangGraph approach, and writes organized output folders.
+The new architecture is a **stateful agent harness**. Instead of a single pass, the system runs an iterative loop:
 
-Uses a supervisor LLM to intelligently select which test generation agents to run for each function. The supervisor analyzes the function's structure and picks 2-4 agents (from 7 available) whose strengths match — avoiding the cost and time of running all 7 agents for every function.
+1. The **supervisor** observes the current state (what tests exist, pass/fail results, mutation scores)
+2. It picks an **action** (generate tests, run tests, run mutation testing, refine, or stop)
+3. The **step function** executes that action and returns a new state
+4. Repeat until the mutation score is high enough or the step budget runs out
 
-The supervisor improves over time via a memory system (no model training needed): it stores past decisions + mutation results in a structured memory, retrieves similar past functions as few-shot examples, and generates reflexion summaries that capture high-level patterns. This is an inference-time learning approach that works with API models.
+Existing modules (`call_agent`, `run_all_agents`, `run_single_test`, `write_tests`) become **action handlers** inside the step function. Nothing gets rewritten — just wrapped.
 
-## Current Status
+Four test agents: **bva**, **ecp**, **path**, **condition**.
 
-### Working
-- **Function extraction** — clone any repo, parse with tree-sitter, extract all Python functions
-- **Supervisor agent** — LLM analyzes each function and selects 2-4 agents (from 7) to run
-- **Memory system** — ChromaDB stores past (function source, agents, mutation scores), retrieves similar functions as few-shot examples, generates reflexion summaries
-- **Agent code** — LangGraph graph with parallel nodes + prompt files all written
-- **Output writer** — `write_function()` and `write_tests()` both implemented
-- **Test runner** — `runner.py` executes generated tests with pytest, produces results.json
-- **Mutation testing** — `mutator.py` integrates mutmut + custom AST mutants for measuring test effectiveness
-- **CLI args** — `main.py` accepts --repo, --output, --concurrency, --limit, --min-lines, --mode
-- **Docker** — Dockerfile builds and runs
+## 2. State Definition
+
+The state is a plain dict. One state per function under test.
+
+```python
+state = {
+    # identity
+    "function_info": {
+        "name": str,
+        "source": str,
+        "language": str,
+        "file_path": str,
+        "imports": str,
+    },
+    "index": int,                   # function index in the batch
+    "output_dir": str,              # base output directory
+    "repo_clone_dir": str,          # path to cloned repo
+
+    # generated tests — test_type -> test code string
+    "generated_tests": {},
+
+    # test results — test_type -> {"passed": [...], "failed": [...], "errors": [...]}
+    "test_results": {},
+
+    # mutation results
+    "mutation_score": 0.0,          # overall kill rate (0.0–1.0)
+    "mutant_count": 0,              # total mutants generated
+    "agent_kills": {},              # test_type -> set of killed mutant IDs
+    "survived_mutants": [],         # list of survived mutant descriptions
+    "killed_mutants": [],           # list of killed mutant descriptions
+
+    # history — list of past actions and their outcomes
+    "history": [],                  # [{"step": int, "action": str, "outcome": str}]
+    "step_count": 0,
+
+    # termination
+    "done": False,
+}
+```
+
+`make_initial_state(fn, index, output_dir, repo_clone_dir)` returns this dict with empty/zero defaults.
+
+## 3. Action Space
+
+Eight discrete actions. The supervisor picks exactly one per step.
+
+### `generate_bva_tests`
+- Calls `call_agent("bva", state["function_info"])`
+- Stores returned test code in `state["generated_tests"]["bva"]`
+- Outcome: number of chars generated, or "empty response"
+
+### `generate_ecp_tests`
+- Calls `call_agent("ecp", state["function_info"])`
+- Stores in `state["generated_tests"]["ecp"]`
+
+### `generate_path_tests`
+- Calls `call_agent("path", state["function_info"])`
+- Stores in `state["generated_tests"]["path"]`
+
+### `generate_condition_tests`
+- Calls `call_agent("condition", state["function_info"])`
+- Stores in `state["generated_tests"]["condition"]`
+
+### `run_tests`
+- Writes test files to disk via `write_tests()`
+- Runs each test file with `run_single_test(test_file, repo_clone_dir)`
+- Populates `state["test_results"]` with pass/fail/error per test type
+- Outcome: summary like "3 passed, 1 failed, 0 errors"
+
+### `run_mutation_testing`
+- Builds `test_files_dict` from written test files on disk
+- Calls `run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_file)`
+- Computes `unique_kills` via `compute_unique_kills(agent_kills)`
+- Updates `state["mutation_score"]`, `state["mutant_count"]`, `state["agent_kills"]`, `state["survived_mutants"]`, `state["killed_mutants"]`
+- Outcome: summary like "42/50 killed (84.0%)"
+
+### `refine_tests`
+- For each test type with surviving mutants, re-calls `call_agent` with extra context appended to the user message: the survived mutant descriptions
+- Overwrites `state["generated_tests"][test_type]` with the refined code
+- Outcome: "refined N agents"
+
+### `stop`
+- Sets `state["done"] = True`
+- Outcome: "stopped"
+
+## 4. Step Function
+
+```python
+def step(state, action):
+    new = {**state}
+    new["generated_tests"] = dict(state["generated_tests"])
+    new["test_results"] = dict(state["test_results"])
+    new["agent_kills"] = dict(state["agent_kills"])
+    new["history"] = list(state["history"])
+    new["step_count"] = state["step_count"] + 1
+
+    outcome = _dispatch(new, action)
+
+    new["history"].append({
+        "step": new["step_count"],
+        "action": action,
+        "outcome": outcome,
+    })
+    return new
+```
+
+`_dispatch(state, action)` is an if/elif chain:
+
+- **`generate_*_tests`**: extract test_type from the action name (strip `generate_` and `_tests`). Call `call_agent(test_type, state["function_info"])`. Store result. Return char count.
+- **`run_tests`**: build a result dict compatible with `write_tests`, write to disk, then loop over test files calling `run_single_test`. Store results. Return summary.
+- **`run_mutation_testing`**: collect test file paths, call `run_all_agents`, call `compute_unique_kills`. Update mutation fields. Return summary.
+- **`refine_tests`**: for each test type in `generated_tests`, rebuild user message with survived mutant context appended. Call `call_agent` with augmented message. Overwrite test code. Return count.
+- **`stop`**: set `done = True`. Return "stopped".
+
+Each action handler calls existing module functions directly. No new abstractions.
+
+## 5. Supervisor Policy
+
+```python
+def supervisor_policy(state):
+    history_actions = [h["action"] for h in state["history"]]
+    has_tests = bool(state["generated_tests"])
+    has_test_results = bool(state["test_results"])
+    has_mutation = state["mutant_count"] > 0
+    mutation_score = state["mutation_score"]
+    refine_count = history_actions.count("refine_tests")
+```
+
+Decision logic, evaluated in order:
+
+1. **No tests generated yet** → return `generate_{first}_tests` from `state["planned_generates"]`.
+2. **Planned generates remaining** → return next `generate_X_tests` not yet in `generated_tests`.
+3. **Tests generated but never run** → return `run_tests`.
+4. **Tests run but no mutation testing** → return `run_mutation_testing`.
+5. **Mutation score >= 0.85** → return `stop`.
+6. **Score < 0.85 and haven't refined yet** → return `refine_tests`.
+7. **Refined but not re-tested** → return `run_tests`.
+8. **Re-tested but mutation not re-run** → return `run_mutation_testing`.
+9. **Second mutation pass done** → return `stop` (one refinement cycle for v1).
+
+The policy is pure heuristics — no LLM call. Fast and deterministic.
+
+## 6. Iterative Loop
+
+```python
+def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=15):
+    state = make_initial_state(fn, index, output_dir, repo_clone_dir)
+
+    for i in range(max_steps):
+        action = supervisor_policy(state)
+        print(f"  [{fn['name']}] step {i+1}: {action}")
+        state = step(state, action)
+        if state["done"]:
+            break
+
+    return state
+```
+
+**Stopping conditions:**
+- `mutation_score >= 0.85` — tests are good enough
+- `max_steps` reached (default 15) — budget exhausted
+- One refinement cycle completed and score still low — stop to avoid infinite loops
+
+**Typical run (6–10 steps):**
+1. `generate_bva_tests`
+2. `generate_ecp_tests`
+3. `generate_path_tests`
+4. `generate_condition_tests`
+5. `run_tests`
+6. `run_mutation_testing`
+7. If score >= 0.85: `stop` (done in 7 steps)
+8. If score < 0.85: `refine_tests` → `run_tests` → `run_mutation_testing` → `stop` (done in 10 steps)
+
+## 7. Design Constraints
+
+- Plain dicts, not dataclasses — the state is a `dict`
+- No type annotations on functions
+- No docstrings, no `@lru_cache`
+- Functions over classes — `run_harness` is a function, not a `Harness` class
+- `os.walk` / `os.path`, not pathlib (except where libraries require Path)
+- Minimal helper functions — inline the logic
+- Reuse `call_agent`, `run_all_agents`, `run_single_test`, `write_tests`, `compute_unique_kills` directly
+- No RL yet — heuristic supervisor policy only
+- One refinement cycle max for v1
+- 4 test agents only: bva, ecp, path, condition
+
+## 8. Future Extensions
+
+- **LLM-based supervisor policy** — replace heuristic with LLM call that takes serialized state and returns action string. Step function and action space stay identical.
+- **RL optimization** — the `(state, action, outcome)` triples in history are trajectory data for policy gradient or DPO. Reward signal = mutation_score at termination.
+- **Multi-cycle refinement** — remove the one-cycle cap. Add diminishing-returns detection (if score improved < 2% on last cycle, stop).
+- **Coverage-guided generation** — add `run_coverage` action using `pytest --cov`. Policy targets uncovered lines.
+- **Trajectory logging** — dump full state history to JSON for offline analysis.
+- **DSPy prompt optimization** — optimize `refine.md` prompt after ~50 labeled examples.
 
 ## Commands
 
@@ -29,21 +216,11 @@ The supervisor improves over time via a memory system (no model training needed)
 # Install dependencies
 uv sync
 
-# Training mode — runs all 7 agents, stores ground truth to memory
-uv run python -m src.main --repo https://github.com/user/repo --output ./outputs --mode train
-
-# Testing mode (default) — supervisor uses memory to select agents
-uv run python -m src.main --repo https://github.com/user/repo --output ./outputs --mode test
-
-# Run generated tests
-uv run python -m src.runner --output ./outputs/repo_name
+# Run the harness
+uv run python -m src.main --repo https://github.com/user/repo --output ./outputs
 
 # Lint
 uv run ruff check src/
-
-# Docker build & run
-docker build -t ghtest .
-docker run -e DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY -v $(pwd)/output:/output ghtest
 ```
 
 Copy `.env.example` to `.env` and fill in your API key before running locally.
@@ -52,44 +229,21 @@ Copy `.env.example` to `.env` and fill in your API key before running locally.
 
 ```
 src/
-├── main.py          # Entry point + CLI args + async runner
-├── extractor.py     # clone repo + tree-sitter function extraction (Python only)
-├── agents.py        # LLM factory + LangGraph state/nodes/graph
-├── supervisor.py    # supervisor LLM that selects which agents to run per function
+├── main.py          # entry point + CLI args
+├── harness.py       # state, step function, supervisor policy, loop
+├── extractor.py     # clone repo + tree-sitter function extraction
+├── agents.py        # LLM factory + call_agent + call_agent_with_context
 ├── memory.py        # ChromaDB memory: store results, retrieve similar, reflexions
 ├── writer.py        # write output folders
-├── runner.py        # execute generated tests with pytest, produce results.json
-├── mutator.py       # mutmut integration + custom AST mutants + unique kill computation
-└── prompts/         # per-agent system prompts (editable .md files)
-    ├── supervisor.md # supervisor agent prompt
-    ├── statement.md # whitebox: statement coverage
-    ├── block.md     # whitebox: block coverage
-    ├── condition.md # whitebox: condition coverage
-    ├── path.md      # whitebox: path coverage
-    ├── bva.md       # blackbox: boundary value analysis
-    ├── ecp.md       # blackbox: equivalence class partitioning
-    └── mutation.md  # blackbox: mutation testing
+├── runner.py        # execute generated tests with pytest
+├── mutator.py       # AST mutants + mutation testing
+└── prompts/
+    ├── bva.md       # boundary value analysis prompt
+    ├── ecp.md       # equivalence class partitioning prompt
+    ├── path.md      # path coverage prompt
+    ├── condition.md # condition/MC/DC coverage prompt
+    └── refine.md    # test refinement prompt
 ```
-
-### Pipeline Flows
-
-**Training:** `clone → extract → supervisor picks (logged) → run ALL 7 agents → write tests → mutation testing → store results in ChromaDB → generate reflections`
-
-**Testing:** `clone → extract → retrieve similar from ChromaDB → supervisor picks (with memory) → run SELECTED agents → write tests → mutation testing → store results → generate reflections`
-
-### Key Modules
-
-- `extractor.py` — clones repo, walks `.py` files with `os.walk`, parses with tree-sitter, returns plain dicts with `name`, `source`, `language`, `file_path`, `imports`
-- `agents.py` — `build_graph(selected_agents)` creates a LangGraph `StateGraph` with parallel fan-out for the selected agents
-- `supervisor.py` — `select_agents(fn, memory_context=None)` calls the LLM to analyze a function and pick 2-4 agents. Accepts optional memory context with past examples + reflections
-- `memory.py` — ChromaDB-backed memory. `store_result()` saves function source + mutation scores. `retrieve_similar()` finds K nearest past functions by source code embedding. `generate_reflections()` asks the LLM to summarize lessons from a batch. `format_memory_context()` builds prompt context from retrieved examples + reflections
-- `mutator.py` — `run_mutmut()` runs mutmut + custom AST mutants in isolated temp dir, returns killed/survived mutant sets. `compute_unique_kills()` finds per-agent unique contribution
-- `writer.py` — `write_function()` writes the source file; `write_tests()` writes test files per function
-- `runner.py` — `run_single_test()` executes one test file with pytest in subprocess; `run_tests()` aggregates results
-
-## Prompt Files (`src/prompts/`)
-
-Each agent has its own `.md` file. Edit these to tune agent behaviour — no Python changes needed.
 
 ## LLM Configuration
 
@@ -97,14 +251,6 @@ Each agent has its own `.md` file. Edit these to tune agent behaviour — no Pyt
 |---|---|---|
 | `LLM_MODEL` | `deepseek-chat` | DeepSeek model name |
 | `DEEPSEEK_API_KEY` | — | Required |
-
-## TODO — Remaining Work
-
-### Later
-- [ ] Verify Docker image works with CLI args
-- [ ] Create `.github/workflows/run-tests.yml`
-- [ ] DSPy prompt optimization (after ~50 labeled examples)
-- [ ] Lightweight router/classifier as fast path (after ~200 labeled examples)
 
 ## Code Style
 - Plain dicts, not dataclasses

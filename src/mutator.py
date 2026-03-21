@@ -486,14 +486,20 @@ def run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_
     """Generate mutants once and test all agents against them in a single parallel pass.
 
     test_files_dict: {test_type: test_file_path}
-    Returns: agent_kills {test_type: set}, agent_totals {test_type: int}, mutant_count int
+    Returns: agent_kills {test_type: set}, agent_totals {test_type: int}, mutant_count int,
+             mutant_descriptions [{"id": int, "tag": str, "description": str}]
     """
     mutants = _generate_custom_mutants(source)
     agent_kills = {tt: set() for tt in test_files_dict}
     agent_totals = {tt: 0 for tt in test_files_dict}
 
+    mutant_descriptions = [
+        {"id": i + 1, "tag": tag, "description": desc}
+        for i, (tag, _source, desc) in enumerate(mutants)
+    ]
+
     if not mutants:
-        return agent_kills, agent_totals, 0
+        return agent_kills, agent_totals, 0, []
 
     if original_file and os.path.exists(original_file):
         target_file = original_file
@@ -517,7 +523,7 @@ def run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_
     for tt in test_files_dict:
         agent_totals[tt] = len(mutants)
 
-    return agent_kills, agent_totals, len(mutants)
+    return agent_kills, agent_totals, len(mutants), mutant_descriptions
 
 
 def compute_unique_kills(all_agent_kills):
