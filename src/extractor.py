@@ -85,6 +85,8 @@ def extract_functions(repo_path):
                     "language": language,
                     "file_path": rel_path,
                     "imports": imports,
+                    "start_line": fn_node.start_point[0] + 1,
+                    "end_line": fn_node.end_point[0] + 1,
                 })
 
     return functions

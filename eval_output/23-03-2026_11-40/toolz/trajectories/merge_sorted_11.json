@@ -1,0 +1,294 @@
+{
+  "function_info": {
+    "name": "merge_sorted",
+    "file_path": "toolz\\itertoolz.py",
+    "language": "python"
+  },
+  "index": 11,
+  "generated_tests": {
+    "bva": "import pytest\nfrom toolz.itertoolz import mapcat\n\ndef test_mapcat_empty_input_sequence():\n    result = list(mapcat(lambda x: [x * 2], []))\n    assert result == []\n\ndef test_mapcat_single_sequence_empty():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[]]))\n    assert result == []\n\ndef test_mapcat_single_sequence_single_element():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[\"a\"]]))\n    assert result == [\"A\"]\n\ndef test_mapcat_single_sequence_multiple_elements():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[\"a\", \"b\"]]))\n    assert result == [\"A\", \"B\"]\n\ndef test_mapcat_multiple_sequences_one_empty():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[\"a\", \"b\"], []]))\n    assert result == [\"A\", \"B\"]\n\ndef test_mapcat_multiple_sequences_all_empty():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[], []]))\n    assert result == []\n\ndef test_mapcat_func_returns_empty_list():\n    result = list(mapcat(lambda s: [], [[\"a\", \"b\"], [\"c\"]]))\n    assert result == []\n\ndef test_mapcat_func_returns_single_element_list():\n    result = list(mapcat(lambda s: [s[0].upper()] if s else [], [[\"a\", \"b\"], [\"c\"]]))\n    assert result == [\"A\", \"C\"]\n\ndef test_mapcat_func_returns_multiple_elements():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[\"a\", \"b\"], [\"c\", \"d\", \"e\"]]))\n    assert result == [\"A\", \"B\", \"C\", \"D\", \"E\"]\n\ndef test_mapcat_with_identity_func():\n    result = list(mapcat(lambda x: x, [[1, 2], [3, 4, 5]]))\n    assert result == [1, 2, 3, 4, 5]\n\ndef test_mapcat_func_returns_iterator():\n    result = list(mapcat(lambda s: (c.upper() for c in s), [[\"a\", \"b\"], [\"c\"]]))\n    assert result == [\"A\", \"B\", \"C\"]\n\ndef test_mapcat_func_returns_tuple():\n    result = list(mapcat(lambda s: tuple(c.upper() for c in s), [[\"a\", \"b\"], [\"c\"]]))\n    assert result == [\"A\", \"B\", \"C\"]\n\ndef test_mapcat_func_returns_string_as_sequence():\n    result = list(mapcat(lambda s: s.upper(), [\"ab\", \"cd\"]))\n    assert result == [\"A\", \"B\", \"C\", \"D\"]",
+    "condition": "from toolz.itertoolz import mapcat\n\n# condition: none (no boolean conditions in mapcat)\ndef test_mapcat_basic():\n    # func returns list, seqs has two sequences\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[\"a\", \"b\"], [\"c\", \"d\", \"e\"]]))\n    assert result == ['A', 'B', 'C', 'D', 'E']\n\n# condition: none (no boolean conditions in mapcat)\ndef test_mapcat_empty_seqs():\n    # empty seqs list\n    result = list(mapcat(lambda s: [c.upper() for c in s], []))\n    assert result == []\n\n# condition: none (no boolean conditions in mapcat)\ndef test_mapcat_func_returns_empty():\n    # func returns empty list for one sequence\n    result = list(mapcat(lambda s: [], [[\"a\", \"b\"], [\"c\", \"d\"]]))\n    assert result == []\n\n# condition: none (no boolean conditions in mapcat)\ndef test_mapcat_single_sequence():\n    # only one sequence in seqs\n    result = list(mapcat(lambda s: [c.lower() for c in s], [[\"A\", \"B\"]]))\n    assert result == ['a', 'b']\n\n# condition: none (no boolean conditions in mapcat)\ndef test_mapcat_func_returns_iterator():\n    # func returns iterator instead of list\n    result = list(mapcat(lambda s: (c.upper() for c in s), [[\"x\", \"y\"], [\"z\"]]))\n    assert result == ['X', 'Y', 'Z']",
+    "ecp": "import pytest\nfrom toolz.itertoolz import mapcat\n\n# Valid equivalence class: func returns a list, seqs is a list of sequences\ndef test_mapcat_valid_list_of_lists():\n    result = list(mapcat(lambda s: [c.upper() for c in s], [[\"a\", \"b\"], [\"c\", \"d\", \"e\"]]))\n    assert result == ['A', 'B', 'C', 'D', 'E']\n\n# Valid equivalence class: func returns an iterator, seqs is a tuple of sequences\ndef test_mapcat_valid_iterator_return():\n    result = list(mapcat(lambda s: (c.upper() for c in s), ([\"a\", \"b\"], [\"c\", \"d\", \"e\"])))\n    assert result == ['A', 'B', 'C', 'D', 'E']\n\n# Valid equivalence class: empty seqs\ndef test_mapcat_empty_seqs():\n    result = list(mapcat(lambda s: [c.upper() for c in s], []))\n    assert result == []\n\n# Valid equivalence class: func returns empty sequences\ndef test_mapcat_func_returns_empty():\n    result = list(mapcat(lambda s: [], [[\"a\", \"b\"], [\"c\", \"d\", \"e\"]]))\n    assert result == []\n\n# Invalid equivalence class: seqs is not iterable\ndef test_mapcat_seqs_not_iterable():\n    with pytest.raises(TypeError):\n        list(mapcat(lambda s: [c.upper() for c in s], 123))\n\n# Invalid equivalence class: func is not callable\ndef test_mapcat_func_not_callable():\n    with pytest.raises(TypeError):\n        list(mapcat(\"not a function\", [[\"a\", \"b\"], [\"c\", \"d\", \"e\"]]))\n\n# Invalid equivalence class: seqs contains non-iterable items\ndef test_mapcat_seqs_contains_non_iterable():\n    with pytest.raises(TypeError):\n        list(mapcat(lambda s: [c.upper() for c in s], [[\"a\", \"b\"], 123]))",
+    "path": "import pytest\nfrom toolz.itertoolz import mapcat\n\n# Path analysis for mapcat(func, seqs):\n# 1. Branch: none (no if/else, loops, or try/except in function body)\n# 2. Function calls: map(func, seqs) \u2192 concat(...)\n# 3. Since there are no branches, there is exactly one execution path.\n# 4. However, we should consider edge cases for input sequences:\n#    - Empty seqs list\n#    - Single sequence in seqs\n#    - Multiple sequences in seqs\n#    - Sequences of varying lengths (including empty sequences)\n#    - Different func behaviors (returning empty list, returning multiple items)\n\n# path: single path through function\ndef test_mapcat_empty_seqs():\n    # seqs is empty list, map returns empty iterator, concat returns empty iterator\n    result = list(mapcat(lambda s: [x.upper() for x in s], []))\n    assert result == []\n\ndef test_mapcat_single_seq():\n    # seqs has one sequence, func processes it, concat yields results\n    result = list(mapcat(lambda s: [x * 2 for x in s], [[1, 2, 3]]))\n    assert result == [2, 4, 6]\n\ndef test_mapcat_multiple_seqs():\n    # seqs has multiple sequences, func processes each, concat concatenates\n    result = list(mapcat(lambda s: [x.upper() for x in s], [[\"a\", \"b\"], [\"c\", \"d\", \"e\"]]))\n    assert result == ['A', 'B', 'C', 'D', 'E']\n\ndef test_mapcat_with_empty_sequences_in_seqs():\n    # seqs contains empty sequences, func returns empty lists, concat handles them\n    result = list(mapcat(lambda s: [x + 1 for x in s], [[], [1, 2], [], [3]]))\n    assert result == [2, 3, 4]\n\ndef test_mapcat_func_returns_empty():\n    # func returns empty list for some sequences\n    result = list(mapcat(lambda s: [] if len(s) == 0 else [sum(s)], [[], [1, 2, 3], [4, 5]]))\n    assert result == [6, 9]\n\ndef test_mapcat_func_returns_multiple_items():\n    # func returns variable number of items per sequence\n    result = list(mapcat(lambda s: list(range(len(s))), [[], ['a'], ['b', 'c'], ['d', 'e', 'f']]))\n    assert result == [0, 0, 1, 0, 1, 2]\n\ndef test_mapcat_large_sequences():\n    # stress test with larger sequences\n    result = list(mapcat(lambda s: [x ** 2 for x in s], [[1, 2, 3], [4, 5], [6]]))\n    assert result == [1, 4, 9, 16, 25, 36]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_mapcat_empty_input_sequence",
+        "test_mapcat_single_sequence_empty",
+        "test_mapcat_single_sequence_single_element",
+        "test_mapcat_single_sequence_multiple_elements",
+        "test_mapcat_multiple_sequences_one_empty",
+        "test_mapcat_multiple_sequences_all_empty",
+        "test_mapcat_func_returns_empty_list",
+        "test_mapcat_func_returns_single_element_list",
+        "test_mapcat_func_returns_multiple_elements",
+        "test_mapcat_with_identity_func",
+        "test_mapcat_func_returns_iterator",
+        "test_mapcat_func_returns_tuple",
+        "test_mapcat_func_returns_string_as_sequence"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".............                                                            [100%]\n13 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "condition": {
+      "passed": [
+        "test_mapcat_basic",
+        "test_mapcat_empty_seqs",
+        "test_mapcat_func_returns_empty",
+        "test_mapcat_single_sequence",
+        "test_mapcat_func_returns_iterator"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".....                                                                    [100%]\n5 passed in 0.06s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_mapcat_func_returns_list_seqs_is_list",
+        "test_mapcat_func_returns_tuple_seqs_is_tuple",
+        "test_mapcat_func_returns_generator_seqs_is_generator",
+        "test_mapcat_empty_seqs",
+        "test_mapcat_seqs_contains_empty_sequences",
+        "test_mapcat_func_returns_empty_for_some",
+        "test_mapcat_seqs_not_iterable",
+        "test_mapcat_func_not_callable",
+        "test_mapcat_seqs_contains_non_iterable"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".........                                                                [100%]\n9 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "path": {
+      "passed": [
+        "test_mapcat_empty_seqs",
+        "test_mapcat_single_seq",
+        "test_mapcat_multiple_seqs",
+        "test_mapcat_with_empty_sequences_in_seqs",
+        "test_mapcat_func_returns_empty",
+        "test_mapcat_func_returns_multiple_items",
+        "test_mapcat_large_sequences"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".......                                                                  [100%]\n7 passed in 0.06s\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "mutation_score": 1.0,
+  "mutant_count": 6,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "condition": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  "survived_mutants": [],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "llm_mutant",
+      "description": "Wrong variable: returns concat(seqs) instead of concat(map(func, seqs))"
+    },
+    {
+      "id": 2,
+      "tag": "llm_mutant",
+      "description": "Swapped arguments: passes seqs, func to map instead of func, seqs"
+    },
+    {
+      "id": 3,
+      "tag": "llm_mutant",
+      "description": "Missing edge case: returns map(func, seqs) instead of concat(map(func, seqs))"
+    },
+    {
+      "id": 4,
+      "tag": "llm_mutant",
+      "description": "Logic inversion: returns concat(map(func, reversed(seqs)))"
+    },
+    {
+      "id": 5,
+      "tag": "llm_mutant",
+      "description": "Wrong comparison: returns concat(map(func, seqs[1:])) skipping first sequence"
+    },
+    {
+      "id": 6,
+      "tag": "llm_mutant",
+      "description": "Off-by-one: returns concat(map(func, seqs[:-1])) skipping last sequence"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1687 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 961 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 2116 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 2166 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "31 passed, 1 failed, 0 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 1 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "31 passed, 1 failed, 0 errors"
+    },
+    {
+      "step": 8,
+      "action": "fix_tests",
+      "outcome": "fixed 1 test types"
+    },
+    {
+      "step": 9,
+      "action": "run_tests",
+      "outcome": "31 passed, 1 failed, 0 errors"
+    },
+    {
+      "step": 10,
+      "action": "run_mutation_testing",
+      "outcome": "8/8 killed (100.0%), llm=100.0%, quality=0.55"
+    },
+    {
+      "step": 11,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.55"
+    },
+    {
+      "step": 12,
+      "action": "generate_bva_tests",
+      "outcome": "generated 2005 chars"
+    },
+    {
+      "step": 13,
+      "action": "run_tests",
+      "outcome": "33 passed, 1 failed, 0 errors"
+    },
+    {
+      "step": 14,
+      "action": "run_mutation_testing",
+      "outcome": "8/8 killed (100.0%), llm=100.0%, quality=0.55"
+    },
+    {
+      "step": 15,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.55"
+    },
+    {
+      "step": 16,
+      "action": "generate_condition_tests",
+      "outcome": "generated 1201 chars"
+    },
+    {
+      "step": 17,
+      "action": "run_tests",
+      "outcome": "34 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 18,
+      "action": "run_mutation_testing",
+      "outcome": "6/6 killed (100.0%), llm=100.0%, quality=0.55"
+    },
+    {
+      "step": 19,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.55"
+    },
+    {
+      "step": 20,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1505 chars"
+    }
+  ],
+  "step_count": 20,
+  "done": false,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 2,
+  "line_coverage": 1.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.30392156862745096,
+  "test_diversity": 0.06666666666666667,
+  "quality_score": 0.5523,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.5489,
+    0.5523,
+    0.5523
+  ],
+  "grpo_rewards": {
+    "mutation": 1.0,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.30392156862745096,
+    "test_diversity": 0.06666666666666667,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.5523
+  }
+}

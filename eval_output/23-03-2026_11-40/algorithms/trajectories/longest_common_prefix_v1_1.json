@@ -1,0 +1,263 @@
+{
+  "function_info": {
+    "name": "longest_common_prefix_v1",
+    "file_path": "algorithms\\string\\longest_common_prefix.py",
+    "language": "python"
+  },
+  "index": 1,
+  "generated_tests": {
+    "bva": "import pytest\nfrom algorithms.string.longest_common_prefix import longest_common_prefix_v3\n\ndef test_empty_list():\n    assert longest_common_prefix_v3([]) == \"\"\n\ndef test_single_string():\n    assert longest_common_prefix_v3([\"abc\"]) == \"abc\"\n\ndef test_two_strings_no_common_prefix():\n    assert longest_common_prefix_v3([\"abc\", \"def\"]) == \"\"\n\ndef test_two_strings_with_common_prefix():\n    assert longest_common_prefix_v3([\"abc\", \"abd\"]) == \"ab\"\n\ndef test_all_strings_identical():\n    assert longest_common_prefix_v3([\"abc\", \"abc\", \"abc\"]) == \"abc\"\n\ndef test_common_prefix_shorter_than_all():\n    assert longest_common_prefix_v3([\"flower\", \"flow\", \"flight\"]) == \"fl\"\n\ndef test_one_string_empty():\n    assert longest_common_prefix_v3([\"\", \"abc\"]) == \"\"\n\ndef test_all_strings_empty():\n    assert longest_common_prefix_v3([\"\", \"\", \"\"]) == \"\"\n\ndef test_single_character_strings():\n    assert longest_common_prefix_v3([\"a\", \"a\", \"a\"]) == \"a\"\n\ndef test_single_character_strings_no_match():\n    assert longest_common_prefix_v3([\"a\", \"b\", \"c\"]) == \"\"",
+    "condition": "from algorithms.string.longest_common_prefix import longest_common_prefix_v3\n\n# condition: not strings: True \u2192 return \"\"\ndef test_empty_list():\n    assert longest_common_prefix_v3([]) == \"\"\n\n# condition: not strings: False \u2192 proceed to recursive call\ndef test_single_string():\n    assert longest_common_prefix_v3([\"abc\"]) == \"abc\"\n\ndef test_all_identical():\n    assert longest_common_prefix_v3([\"abc\", \"abc\", \"abc\"]) == \"abc\"\n\ndef test_common_prefix():\n    assert longest_common_prefix_v3([\"flower\", \"flow\", \"flight\"]) == \"fl\"\n\ndef test_no_common_prefix():\n    assert longest_common_prefix_v3([\"dog\", \"racecar\", \"car\"]) == \"\"",
+    "ecp": "import pytest\nfrom algorithms.string.longest_common_prefix import longest_common_prefix_v3\n\n# Valid equivalence class: empty list\ndef test_empty_list():\n    assert longest_common_prefix_v3([]) == \"\"\n\n# Valid equivalence class: list with one string\ndef test_single_string():\n    assert longest_common_prefix_v3([\"abc\"]) == \"abc\"\n\n# Valid equivalence class: list with multiple strings having common prefix\ndef test_multiple_strings_with_common_prefix():\n    assert longest_common_prefix_v3([\"flower\", \"flow\", \"flight\"]) == \"fl\"\n\n# Valid equivalence class: list with multiple strings having no common prefix\ndef test_multiple_strings_no_common_prefix():\n    assert longest_common_prefix_v3([\"dog\", \"racecar\", \"car\"]) == \"\"\n\n# Valid equivalence class: list where all strings are identical\ndef test_all_strings_identical():\n    assert longest_common_prefix_v3([\"abc\", \"abc\", \"abc\"]) == \"abc\"\n\n# Valid equivalence class: list where common prefix is the shortest string\ndef test_common_prefix_is_shortest_string():\n    assert longest_common_prefix_v3([\"ab\", \"abc\", \"abcd\"]) == \"ab\"\n\n# Valid equivalence class: list containing empty strings\ndef test_list_with_empty_strings():\n    assert longest_common_prefix_v3([\"\", \"abc\", \"ab\"]) == \"\"\n\n# Valid equivalence class: list where all strings are empty\ndef test_all_strings_empty():\n    assert longest_common_prefix_v3([\"\", \"\", \"\"]) == \"\"",
+    "path": "import pytest\nfrom algorithms.string.longest_common_prefix import longest_common_prefix_v3\n\n# path: empty check \u2192 True \u2192 return \"\"\ndef test_longest_common_prefix_v3_empty():\n    assert longest_common_prefix_v3([]) == \"\"\n\n# path: empty check \u2192 False \u2192 recursive base case (low == high) \u2192 return strings[low]\ndef test_longest_common_prefix_v3_single_string():\n    assert longest_common_prefix_v3([\"abc\"]) == \"abc\"\n\n# path: empty check \u2192 False \u2192 recursive split (low < high) \u2192 left recursion \u2192 right recursion \u2192 merge\ndef test_longest_common_prefix_v3_two_strings_common():\n    assert longest_common_prefix_v3([\"ab\", \"ac\"]) == \"a\"\n\n# path: empty check \u2192 False \u2192 recursive split (low < high) \u2192 left recursion \u2192 right recursion \u2192 merge with no common prefix\ndef test_longest_common_prefix_v3_two_strings_no_common():\n    assert longest_common_prefix_v3([\"ab\", \"cd\"]) == \"\"\n\n# path: empty check \u2192 False \u2192 recursive split (low < high) \u2192 left recursion (multiple splits) \u2192 right recursion (multiple splits) \u2192 merge\ndef test_longest_common_prefix_v3_multiple_strings_common():\n    assert longest_common_prefix_v3([\"flower\", \"flow\", \"flight\"]) == \"fl\"\n\n# path: empty check \u2192 False \u2192 recursive split (low < high) \u2192 left recursion (multiple splits) \u2192 right recursion (multiple splits) \u2192 merge with empty prefix\ndef test_longest_common_prefix_v3_multiple_strings_no_common():\n    assert longest_common_prefix_v3([\"dog\", \"racecar\", \"car\"]) == \"\""
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_empty_list",
+        "test_single_string",
+        "test_two_strings_no_common_prefix",
+        "test_two_strings_with_common_prefix",
+        "test_all_strings_identical",
+        "test_common_prefix_shorter_than_all",
+        "test_one_string_empty",
+        "test_all_strings_empty",
+        "test_single_character_strings",
+        "test_single_character_strings_no_match"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "..........                                                               [100%]\n10 passed in 0.27s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "condition": {
+      "passed": [
+        "test_empty_list",
+        "test_single_string",
+        "test_all_identical",
+        "test_common_prefix",
+        "test_no_common_prefix"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".....                                                                    [100%]\n5 passed in 0.12s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_empty_list",
+        "test_single_string",
+        "test_multiple_strings_with_common_prefix",
+        "test_multiple_strings_no_common_prefix",
+        "test_all_strings_identical",
+        "test_common_prefix_is_shortest_string",
+        "test_list_with_empty_strings",
+        "test_all_strings_empty"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "........                                                                 [100%]\n8 passed in 0.11s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "path": {
+      "passed": [
+        "test_longest_common_prefix_v3_empty",
+        "test_longest_common_prefix_v3_single_string",
+        "test_longest_common_prefix_v3_two_strings_common",
+        "test_longest_common_prefix_v3_two_strings_no_common",
+        "test_longest_common_prefix_v3_multiple_strings_common",
+        "test_longest_common_prefix_v3_multiple_strings_no_common"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "......                                                                   [100%]\n6 passed in 0.12s\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "mutation_score": 1.0,
+  "mutant_count": 10,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "condition": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10
+    ]
+  },
+  "survived_mutants": [],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 16"
+    },
+    {
+      "id": 2,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 14"
+    },
+    {
+      "id": 3,
+      "tag": "llm_mutant",
+      "description": "Missing edge case: returns empty string for empty list but not for list with empty strings"
+    },
+    {
+      "id": 4,
+      "tag": "llm_mutant",
+      "description": "Off-by-one: high index set to len(strings) instead of len(strings)-1, causing potential index error in recursive call"
+    },
+    {
+      "id": 5,
+      "tag": "llm_mutant",
+      "description": "Wrong variable: passes strings[0] as first argument to recursive function instead of strings"
+    },
+    {
+      "id": 6,
+      "tag": "llm_mutant",
+      "description": "Logic inversion: returns prefix for non-empty list but empty string for empty list is incorrectly handled"
+    },
+    {
+      "id": 7,
+      "tag": "llm_mutant",
+      "description": "Early return: returns empty string immediately without calling recursive function"
+    },
+    {
+      "id": 8,
+      "tag": "llm_mutant",
+      "description": "Wrong comparison: checks if strings is None instead of checking if it's empty"
+    },
+    {
+      "id": 9,
+      "tag": "llm_mutant",
+      "description": "Off-by-sign: subtracts 1 from low index instead of using 0"
+    },
+    {
+      "id": 10,
+      "tag": "llm_mutant",
+      "description": "Swapped arguments: passes len(strings)-1 as low index and 0 as high index"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1042 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 625 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1376 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 1431 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "29 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 6,
+      "action": "run_mutation_testing",
+      "outcome": "10/10 killed (100.0%), llm=100.0%, quality=0.57"
+    },
+    {
+      "step": 7,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 100.0%, quality=0.82"
+    },
+    {
+      "step": 8,
+      "action": "stop",
+      "outcome": "stopped"
+    }
+  ],
+  "step_count": 8,
+  "done": true,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 0,
+  "line_coverage": 1.0,
+  "branch_coverage": 1.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.3333333333333333,
+  "test_diversity": 0.2,
+  "quality_score": 0.82,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.82
+  ],
+  "grpo_rewards": {
+    "mutation": 1.0,
+    "branch_coverage": 1.0,
+    "assertion_density": 0.3333333333333333,
+    "test_diversity": 0.2,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.82
+  }
+}

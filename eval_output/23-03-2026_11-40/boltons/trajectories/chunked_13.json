@@ -1,0 +1,300 @@
+{
+  "function_info": {
+    "name": "chunked",
+    "file_path": "boltons\\iterutils.py",
+    "language": "python"
+  },
+  "index": 13,
+  "generated_tests": {
+    "bva": "import pytest\nfrom boltons.iterutils import flatten\n\ndef test_flatten_empty_iterable():\n    assert flatten([]) == []\n\ndef test_flatten_single_level_list():\n    assert flatten([1, 2, 3]) == [1, 2, 3]\n\ndef test_flatten_nested_empty_lists():\n    assert flatten([[], []]) == []\n\ndef test_flatten_deeply_nested_single_element():\n    assert flatten([[[[1]]]]) == [1]\n\ndef test_flatten_mixed_nesting():\n    assert flatten([[1, 2], [[3], [4, 5]]]) == [1, 2, 3, 4, 5]\n\ndef test_flatten_with_strings_as_non_iterable():\n    assert flatten(['ab', 'cd']) == ['ab', 'cd']\n\ndef test_flatten_with_mixed_types():\n    assert flatten([1, [2, 3], 4]) == [1, 2, 3, 4]\n\ndef test_flatten_single_element():\n    assert flatten([42]) == [42]\n\ndef test_flatten_large_nested_structure():\n    nested = [[i for i in range(10)] for _ in range(10)]\n    expected = list(range(10)) * 10\n    assert flatten(nested) == expected",
+    "condition": "from boltons.iterutils import flatten\nimport pytest\n\n# condition: isinstance(elem, Iterable): True\ndef test_flatten_nested_iterable():\n    nested = [[1, 2], [[3], [4, 5]]]\n    assert flatten(nested) == [1, 2, 3, 4, 5]\n\n# condition: isinstance(elem, Iterable): False\ndef test_flatten_non_iterable_elements():\n    flat = [1, 2, 3, 4, 5]\n    assert flatten(flat) == [1, 2, 3, 4, 5]\n\n# condition: isinstance(elem, Iterable): True (string as iterable)\ndef test_flatten_with_strings():\n    # strings are iterable, but flatten treats them as single elements\n    # This test ensures that strings are not further flattened\n    input_data = [\"ab\", [\"cd\"]]\n    # Expected: strings are kept as is because flatten_iter checks for basestring in Python 2 or (str, bytes) in Python 3\n    # In Python 3, flatten_iter uses isinstance(elem, (str, bytes)) to avoid flattening strings\n    # So the result should be [\"ab\", \"cd\"]\n    assert flatten(input_data) == [\"ab\", \"cd\"]\n\n# condition: isinstance(elem, Iterable): True (empty iterable)\ndef test_flatten_empty_nested():\n    nested = [[], [[]], 1]\n    assert flatten(nested) == [1]\n\n# condition: isinstance(elem, Iterable): True (mixed nested)\ndef test_flatten_mixed_nesting():\n    nested = [1, [2, [3, 4]], 5]\n    assert flatten(nested) == [1, 2, 3, 4, 5]\n\n# condition: isinstance(elem, Iterable): False (single non-iterable)\ndef test_flatten_single_element():\n    assert flatten([42]) == [42]\n\n# condition: isinstance(elem, Iterable): True (deep nesting)\ndef test_flatten_deep_nesting():\n    nested = [[[[[1]]]], 2]\n    assert flatten(nested) == [1, 2]",
+    "ecp": "import pytest\nfrom boltons.iterutils import flatten\n\n# Valid equivalence class: empty iterable\ndef test_flatten_empty():\n    assert flatten([]) == []\n\n# Valid equivalence class: flat list of non-iterable items\ndef test_flatten_flat_list():\n    assert flatten([1, 2, 3]) == [1, 2, 3]\n\n# Valid equivalence class: nested list of non-iterable items\ndef test_flatten_nested_list():\n    assert flatten([[1, 2], [[3], [4, 5]]]) == [1, 2, 3, 4, 5]\n\n# Valid equivalence class: mixed iterables (list and tuple)\ndef test_flatten_mixed_iterables():\n    assert flatten([(1, 2), [3, (4, 5)]]) == [1, 2, 3, 4, 5]\n\n# Valid equivalence class: generator as input\ndef test_flatten_generator():\n    gen = (x for x in [[1], [2, 3]])\n    assert flatten(gen) == [1, 2, 3]\n\n# Valid equivalence class: string items (strings are iterable but treated as single items)\ndef test_flatten_with_strings():\n    # Strings are iterable, but flatten does not break them apart.\n    # This is a known behavior: flatten does not recurse into strings.\n    assert flatten([\"ab\", [\"cd\"]]) == [\"ab\", \"cd\"]\n\n# Valid equivalence class: deeply nested empty iterables\ndef test_flatten_deeply_nested_empty():\n    assert flatten([[[[]]]]) == []\n\n# Valid equivalence class: single non-iterable item in list\ndef test_flatten_single_item():\n    assert flatten([42]) == [42]\n\n# Valid equivalence class: iterable containing None\ndef test_flatten_with_none():\n    assert flatten([None, [1, None]]) == [None, 1, None]",
+    "path": "import pytest\nfrom boltons.iterutils import flatten\n\n# path: flatten_iter yields all items from nested iterable\ndef test_flatten_nested_lists():\n    nested = [[1, 2], [[3], [4, 5]]]\n    assert flatten(nested) == [1, 2, 3, 4, 5]\n\n# path: flatten_iter yields items from empty outer iterable\ndef test_flatten_empty():\n    assert flatten([]) == []\n\n# path: flatten_iter yields items from flat iterable (no nesting)\ndef test_flatten_flat():\n    assert flatten([1, 2, 3]) == [1, 2, 3]\n\n# path: flatten_iter yields items from mixed nesting\ndef test_flatten_mixed():\n    mixed = [1, [2, [3]], 4]\n    assert flatten(mixed) == [1, 2, 3, 4]\n\n# path: flatten_iter yields items from deeply nested single element\ndef test_flatten_deep_single():\n    deep = [[[[[5]]]]]\n    assert flatten(deep) == [5]\n\n# path: flatten_iter yields items from iterable with empty sub\u2011iterables\ndef test_flatten_with_empty_subiterables():\n    data = [[], [1, 2], [], [3], []]\n    assert flatten(data) == [1, 2, 3]\n\n# path: flatten_iter yields items from non\u2011list iterable (e.g., tuple)\ndef test_flatten_tuple():\n    tup = ([1, 2], (3, 4))\n    assert flatten(tup) == [1, 2, 3, 4]\n\n# path: flatten_iter yields items from generator\ndef test_flatten_generator():\n    gen = (x for x in [[1], [2, 3]])\n    assert flatten(gen) == [1, 2, 3]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_flatten_empty_iterable",
+        "test_flatten_single_level_list",
+        "test_flatten_nested_empty_lists",
+        "test_flatten_deeply_nested_single_element",
+        "test_flatten_mixed_nesting",
+        "test_flatten_with_strings_as_non_iterable",
+        "test_flatten_with_mixed_types",
+        "test_flatten_single_element",
+        "test_flatten_large_nested_structure"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".........                                                                [100%]\n9 passed in 0.06s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "condition": {
+      "passed": [
+        "test_flatten_nested_iterable",
+        "test_flatten_non_iterable_elements",
+        "test_flatten_with_strings",
+        "test_flatten_empty_nested",
+        "test_flatten_mixed_nesting",
+        "test_flatten_single_element",
+        "test_flatten_deep_nesting"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".......                                                                  [100%]\n7 passed in 0.05s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_flatten_empty",
+        "test_flatten_flat_list",
+        "test_flatten_nested_list",
+        "test_flatten_mixed_iterables",
+        "test_flatten_generator",
+        "test_flatten_with_strings",
+        "test_flatten_deeply_nested_empty",
+        "test_flatten_single_item",
+        "test_flatten_with_none"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".........                                                                [100%]\n9 passed in 0.06s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "path": {
+      "passed": [
+        "test_flatten_nested_lists",
+        "test_flatten_empty",
+        "test_flatten_flat",
+        "test_flatten_mixed",
+        "test_flatten_deep_single",
+        "test_flatten_with_empty_subiterables",
+        "test_flatten_tuple",
+        "test_flatten_generator"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "........                                                                 [100%]\n8 passed in 0.06s\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "mutation_score": 1.0,
+  "mutant_count": 7,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      7
+    ],
+    "condition": [
+      1,
+      2,
+      3,
+      4,
+      6,
+      7
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  "survived_mutants": [],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "llm_mutant",
+      "description": "Missing edge case: returns empty list instead of flattening when encountering an empty iterable within the nested structure"
+    },
+    {
+      "id": 2,
+      "tag": "llm_mutant",
+      "description": "Wrong variable: returns the original iterable instead of flattened list when it's already flat"
+    },
+    {
+      "id": 3,
+      "tag": "llm_mutant",
+      "description": "Early return: returns after first level of flattening instead of fully recursive flattening"
+    },
+    {
+      "id": 4,
+      "tag": "llm_mutant",
+      "description": "Logic inversion: treats strings as iterables to flatten (breaks string handling)"
+    },
+    {
+      "id": 5,
+      "tag": "llm_mutant",
+      "description": "Wrong comparison: uses 'isinstance(item, list)' instead of checking for general Iterable, missing other sequence types"
+    },
+    {
+      "id": 6,
+      "tag": "llm_mutant",
+      "description": "Missing edge case: doesn't handle None values in the iterable, treating None as non-iterable without special handling"
+    },
+    {
+      "id": 7,
+      "tag": "llm_mutant",
+      "description": "Off-by-one: stops recursion one level too early by checking if item is Iterable but not also checking if it's the same type as the original"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1346 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 1501 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 876 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 1297 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "33 passed, 3 failed, 0 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 2 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "36 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 8,
+      "action": "run_mutation_testing",
+      "outcome": "8/8 killed (100.0%), llm=100.0%, quality=0.56"
+    },
+    {
+      "step": 9,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.56"
+    },
+    {
+      "step": 10,
+      "action": "generate_bva_tests",
+      "outcome": "generated 891 chars"
+    },
+    {
+      "step": 11,
+      "action": "run_tests",
+      "outcome": "32 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 12,
+      "action": "run_mutation_testing",
+      "outcome": "7/8 killed (87.5%), llm=87.5%, quality=0.49"
+    },
+    {
+      "step": 13,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.49"
+    },
+    {
+      "step": 14,
+      "action": "generate_condition_tests",
+      "outcome": "generated 1584 chars"
+    },
+    {
+      "step": 15,
+      "action": "run_tests",
+      "outcome": "33 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 16,
+      "action": "run_mutation_testing",
+      "outcome": "8/8 killed (100.0%), llm=100.0%, quality=0.56"
+    },
+    {
+      "step": 17,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.56"
+    },
+    {
+      "step": 18,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1461 chars"
+    },
+    {
+      "step": 19,
+      "action": "run_tests",
+      "outcome": "33 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 20,
+      "action": "run_mutation_testing",
+      "outcome": "7/7 killed (100.0%), llm=100.0%, quality=0.56"
+    }
+  ],
+  "step_count": 20,
+  "done": false,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 1,
+  "line_coverage": 1.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.3333333333333333,
+  "test_diversity": 0.06666666666666667,
+  "quality_score": 0.5567,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.5567,
+    0.4942,
+    0.5567
+  ],
+  "grpo_rewards": {
+    "mutation": 1.0,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.3333333333333333,
+    "test_diversity": 0.06666666666666667,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.5567
+  }
+}

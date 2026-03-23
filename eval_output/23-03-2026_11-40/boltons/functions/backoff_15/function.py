@@ -1,0 +1,1 @@
+def sep_func(x): return x == sep

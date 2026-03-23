@@ -1,0 +1,345 @@
+{
+  "function_info": {
+    "name": "backoff",
+    "file_path": "boltons\\iterutils.py",
+    "language": "python"
+  },
+  "index": 15,
+  "generated_tests": {
+    "bva": "import pytest\nfrom boltons.iterutils import backoff\n\ndef test_backoff_with_min_delay_zero():\n    delays = list(backoff(min_delay=0, max_delay=10, factor=2, jitter=False))\n    assert len(delays) > 0\n    assert delays[0] == 0\n\ndef test_backoff_with_min_delay_one():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False))\n    assert delays[0] == 1\n\ndef test_backoff_with_max_delay_at_boundary():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False))\n    for delay in delays:\n        assert delay <= 10\n\ndef test_backoff_exceeds_max_delay():\n    delays = list(backoff(min_delay=9, max_delay=10, factor=2, jitter=False))\n    assert delays[0] == 9\n    assert delays[1] == 10\n    assert delays[2] == 10\n\ndef test_backoff_with_factor_one():\n    delays = list(backoff(min_delay=1, max_delay=5, factor=1, jitter=False))\n    assert delays[0] == 1\n    assert delays[1] == 1\n    assert delays[2] == 1\n\ndef test_backoff_with_factor_above_one():\n    delays = list(backoff(min_delay=1, max_delay=20, factor=2, jitter=False))\n    assert delays[0] == 1\n    assert delays[1] == 2\n    assert delays[2] == 4\n    assert delays[3] == 8\n    assert delays[4] == 16\n    assert delays[5] == 20\n\ndef test_backoff_with_jitter_true():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=True))\n    for delay in delays:\n        assert 0 <= delay <= 10\n\ndef test_backoff_with_jitter_false():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False))\n    expected = [1, 2, 4, 8, 10, 10]\n    for d, e in zip(delays[:len(expected)], expected):\n        assert d == e\n\ndef test_backoff_with_zero_iterations():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=0))\n    assert len(delays) == 0\n\ndef test_backoff_with_one_iteration():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=1))\n    assert len(delays) == 1\n    assert delays[0] == 1\n\ndef test_backoff_with_large_iterations():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=100))\n    assert len(delays) == 100\n    for delay in delays:\n        assert delay == 10\n\ndef test_backoff_with_negative_min_delay():\n    with pytest.raises(ValueError):\n        list(backoff(min_delay=-1, max_delay=10, factor=2, jitter=False))\n\ndef test_backoff_with_min_delay_greater_than_max_delay():\n    with pytest.raises(ValueError):\n        list(backoff(min_delay=11, max_delay=10, factor=2, jitter=False))\n\ndef test_backoff_with_factor_zero():\n    with pytest.raises(ValueError):\n        list(backoff(min_delay=1, max_delay=10, factor=0, jitter=False))\n\ndef test_backoff_with_factor_negative():\n    with pytest.raises(ValueError):\n        list(backoff(min_delay=1, max_delay=10, factor=-1, jitter=False))\n\ndef test_backoff_with_max_iterations_negative():\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=-1))\n    assert len(delays) == 0",
+    "condition": "```python\nimport math\nimport random\nimport time\nfrom boltons.iterutils import backoff\n\n# Test 1: initial_delay > 0: True, max_delay is None: True, jitter: False\ndef test_backoff_initial_positive_no_max_no_jitter():\n    \"\"\"Test basic backoff with positive initial, no max, no jitter\"\"\"\n    gen = backoff(initial_delay=1.0, max_delay=None, jitter=False)\n    delays = [next(gen) for _ in range(5)]\n    # initial_delay > 0: True (1.0 > 0)\n    # max_delay is None: True\n    # jitter: False\n    assert delays[0] == 1.0\n    assert delays[1] == 2.0  # 1.0 * 2\n    assert delays[2] == 4.0  # 2.0 * 2\n\n# Test 2: initial_delay > 0: False, max_delay is None: True, jitter: False\ndef test_backoff_initial_zero_no_max_no_jitter():\n    \"\"\"Test backoff with zero initial delay, no max, no jitter\"\"\"\n    gen = backoff(initial_delay=0.0, max_delay=None, jitter=False)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: False (0.0 > 0)\n    # max_delay is None: True\n    # jitter: False\n    assert delays[0] == 0.0\n    assert delays[1] == 0.0  # 0.0 * 2\n    assert delays[2] == 0.0  # 0.0 * 2\n\n# Test 3: initial_delay > 0: True, max_delay is None: False, jitter: False\ndef test_backoff_with_max_no_jitter():\n    \"\"\"Test backoff with max delay, no jitter\"\"\"\n    gen = backoff(initial_delay=1.0, max_delay=3.0, jitter=False)\n    delays = [next(gen) for _ in range(5)]\n    # initial_delay > 0: True (1.0 > 0)\n    # max_delay is None: False (max_delay=3.0)\n    # jitter: False\n    assert delays[0] == 1.0\n    assert delays[1] == 2.0  # 1.0 * 2\n    assert delays[2] == 3.0  # min(4.0, 3.0) = 3.0\n    assert delays[3] == 3.0  # stays at max\n    assert delays[4] == 3.0\n\n# Test 4: initial_delay > 0: True, max_delay is None: True, jitter: True\ndef test_backoff_with_jitter_no_max():\n    \"\"\"Test backoff with jitter, no max delay\"\"\"\n    gen = backoff(initial_delay=1.0, max_delay=None, jitter=True)\n    delay = next(gen)\n    # initial_delay > 0: True (1.0 > 0)\n    # max_delay is None: True\n    # jitter: True\n    assert 0.5 <= delay <= 1.5  # 1.0 \u00b1 50%\n\n# Test 5: initial_delay > 0: True, max_delay is None: False, jitter: True\ndef test_backoff_with_max_and_jitter():\n    \"\"\"Test backoff with max delay and jitter\"\"\"\n    gen = backoff(initial_delay=1.0, max_delay=2.0, jitter=True)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: True (1.0 > 0)\n    # max_delay is None: False (max_delay=2.0)\n    # jitter: True\n    assert 0.5 <= delays[0] <= 1.5  # 1.0 \u00b1 50%\n    # Second delay should be capped at max_delay=2.0 with jitter\n    assert 1.0 <= delays[1] <= 2.0  # min(2.0*2, 2.0)=2.0 \u00b1 50% \u2192 1.0-2.0\n    assert 1.0 <= delays[2] <= 2.0  # stays at max with jitter\n\n# Test 6: initial_delay > 0: False, max_delay is None: False, jitter: True\ndef test_backoff_zero_initial_with_max_and_jitter():\n    \"\"\"Test backoff with zero initial, max delay, and jitter\"\"\"\n    gen = backoff(initial_delay=0.0, max_delay=1.0, jitter=True)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: False (0.0 > 0)\n    # max_delay is None: False (max_delay=1.0)\n    # jitter: True\n    assert 0.0 <= delays[0] <= 0.0  # 0.0 \u00b1 50% = 0.0\n    assert 0.0 <= delays[1] <= 0.0  # 0.0 * 2 = 0.0 \u00b1 50% = 0.0\n    assert 0.0 <= delays[2] <= 0.0\n\n# Test 7: initial_delay > 0: False, max_delay is None: True, jitter: True\ndef test_backoff_zero_initial_jitter_no_max():\n    \"\"\"Test backoff with zero initial, jitter, no max\"\"\"\n    gen = backoff(initial_delay=0.0, max_delay=None, jitter=True)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: False (0.0 > 0)\n    # max_delay is None: True\n    # jitter: True\n    assert delays[0] == 0.0  # 0.0 \u00b1 50% = 0.0\n    assert delays[1] == 0.0  # 0.0 * 2 = 0.0 \u00b1 50% = 0.0\n    assert delays[2] == 0.0\n\n# Test 8: initial_delay > 0: False, max_delay is None: False, jitter: False\ndef test_backoff_zero_initial_with_max_no_jitter():\n    \"\"\"Test backoff with zero initial, max delay, no jitter\"\"\"\n    gen = backoff(initial_delay=0.0, max_delay=5.0, jitter=False)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: False (0.0 > 0)\n    # max_delay is None: False (max_delay=5.0)\n    # jitter: False\n    assert delays[0] == 0.0\n    assert delays[1] == 0.0  # 0.0 * 2\n    assert delays[2] == 0.0\n\n# Test 9: initial_delay > 0: True, max_delay is None: False, jitter: False with exact max\ndef test_backoff_exact_max_hit():\n    \"\"\"Test backoff where calculated delay exactly equals max_delay\"\"\"\n    gen = backoff(initial_delay=2.0, max_delay=4.0, jitter=False)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: True (2.0 > 0)\n    # max_delay is None: False (max_delay=4.0)\n    # jitter: False\n    assert delays[0] == 2.0\n    assert delays[1] == 4.0  # 2.0 * 2 = 4.0 exactly equals max\n    assert delays[2] == 4.0  # stays at max\n\n# Test 10: initial_delay > 0: True, max_delay is None: True, jitter: True multiple iterations\ndef test_backoff_jitter_randomness():\n    \"\"\"Test that jitter produces different values (not guaranteed but likely)\"\"\"\n    gen1 = backoff(initial_delay=1.0, max_delay=None, jitter=True)\n    gen2 = backoff(initial_delay=1.0, max_delay=None, jitter=True)\n    delays1 = [next(gen1) for _ in range(10)]\n    delays2 = [next(gen2) for _ in range(10)]\n    # initial_delay > 0: True (1.0 > 0)\n    # max_delay is None: True\n    # jitter: True\n    # With jitter, sequences should differ (very high probability)\n    assert delays1 != delays2\n\n# Test 11: Edge case - negative initial_delay (treated as > 0: False)\ndef test_backoff_negative_initial():\n    \"\"\"Test backoff with negative initial delay\"\"\"\n    gen = backoff(initial_delay=-1.0, max_delay=None, jitter=False)\n    delays = [next(gen) for _ in range(3)]\n    # initial_delay > 0: False (-1.0 > 0)\n    # max_delay is None: True\n    # jitter: False\n    assert delays[0] == -1.0\n    assert delays[1] == -2.0  # -1.0 * 2\n    assert delays[2] == -4.0  # -2.0 * 2\n```",
+    "ecp": "import pytest\nimport math\nimport random\nfrom boltons.iterutils import backoff\n\n# Valid equivalence class: valid initial delay (positive integer)\ndef test_backoff_valid_initial_delay():\n    gen = backoff(initial_delay=1)\n    delays = [next(gen) for _ in range(3)]\n    assert all(d >= 1 for d in delays)\n\n# Valid equivalence class: valid factor (float > 1)\ndef test_backoff_valid_factor():\n    gen = backoff(initial_delay=1, factor=2.0)\n    delays = [next(gen) for _ in range(3)]\n    assert delays[0] == 1\n    assert delays[1] >= 2  # 1 * 2.0 \u00b1 jitter\n\n# Valid equivalence class: valid jitter (float between 0 and 1)\ndef test_backoff_valid_jitter():\n    gen = backoff(initial_delay=1, jitter=0.5)\n    delays = [next(gen) for _ in range(3)]\n    assert all(0.5 <= d <= 1.5 for d in delays)\n\n# Valid equivalence class: valid max_delay (positive number)\ndef test_backoff_valid_max_delay():\n    gen = backoff(initial_delay=1, max_delay=2)\n    delays = [next(gen) for _ in range(10)]\n    assert all(d <= 2 for d in delays)\n\n# Invalid equivalence class: initial_delay non-numeric\ndef test_backoff_invalid_initial_delay_type():\n    with pytest.raises(TypeError):\n        gen = backoff(initial_delay=\"1\")\n\n# Invalid equivalence class: initial_delay zero\ndef test_backoff_invalid_initial_delay_zero():\n    with pytest.raises(ValueError):\n        gen = backoff(initial_delay=0)\n\n# Invalid equivalence class: initial_delay negative\ndef test_backoff_invalid_initial_delay_negative():\n    with pytest.raises(ValueError):\n        gen = backoff(initial_delay=-1)\n\n# Invalid equivalence class: factor non-numeric\ndef test_backoff_invalid_factor_type():\n    with pytest.raises(TypeError):\n        gen = backoff(initial_delay=1, factor=\"2\")\n\n# Invalid equivalence class: factor less than or equal to 1\ndef test_backoff_invalid_factor_le_one():\n    with pytest.raises(ValueError):\n        gen = backoff(initial_delay=1, factor=1.0)\n\n# Invalid equivalence class: jitter non-numeric\ndef test_backoff_invalid_jitter_type():\n    with pytest.raises(TypeError):\n        gen = backoff(initial_delay=1, jitter=\"0.5\")\n\n# Invalid equivalence class: jitter negative\ndef test_backoff_invalid_jitter_negative():\n    with pytest.raises(ValueError):\n        gen = backoff(initial_delay=1, jitter=-0.1)\n\n# Invalid equivalence class: jitter greater than 1\ndef test_backoff_invalid_jitter_gt_one():\n    with pytest.raises(ValueError):\n        gen = backoff(initial_delay=1, jitter=1.1)\n\n# Invalid equivalence class: max_delay non-numeric\ndef test_backoff_invalid_max_delay_type():\n    with pytest.raises(TypeError):\n        gen = backoff(initial_delay=1, max_delay=\"10\")\n\n# Invalid equivalence class: max_delay negative\ndef test_backoff_invalid_max_delay_negative():\n    with pytest.raises(ValueError):\n        gen = backoff(initial_delay=1, max_delay=-1)\n\n# Valid equivalence class: jitter exactly 0\ndef test_backoff_jitter_zero():\n    gen = backoff(initial_delay=1, jitter=0)\n    delays = [next(gen) for _ in range(3)]\n    assert delays == [1, 2, 4]  # factor defaults to 2\n\n# Valid equivalence class: jitter exactly 1\ndef test_backoff_jitter_one():\n    gen = backoff(initial_delay=1, jitter=1)\n    delays = [next(gen) for _ in range(3)]\n    assert all(0 <= d <= 2 for d in delays)\n\n# Valid equivalence class: factor exactly 1.1 (greater than 1)\ndef test_backoff_factor_gt_one():\n    gen = backoff(initial_delay=1, factor=1.1)\n    delays = [next(gen) for _ in range(3)]\n    assert delays[0] == 1\n    assert delays[1] >= 1.1\n\n# Valid equivalence class: max_delay exactly equal to initial_delay\ndef test_backoff_max_delay_equal_initial():\n    gen = backoff(initial_delay=2, max_delay=2)\n    delays = [next(gen) for _ in range(5)]\n    assert all(d == 2 for d in delays)",
+    "path": "import pytest\nimport math\nimport random\nfrom boltons.iterutils import backoff\n\n# Path enumeration for backoff function:\n# 1. start <= 0 \u2192 raise ValueError\n# 2. start > 0, stop is None, step <= 0 \u2192 raise ValueError\n# 3. start > 0, stop is None, step > 0 \u2192 infinite loop (generator yields forever)\n# 4. start > 0, stop is not None, step <= 0 \u2192 raise ValueError\n# 5. start > 0, stop is not None, step > 0, stop <= start \u2192 yields start once then stops\n# 6. start > 0, stop is not None, step > 0, stop > start, exp_base <= 0 \u2192 raise ValueError\n# 7. start > 0, stop is not None, step > 0, stop > start, exp_base > 0, jitter <= 0 \u2192 yields until stop reached\n# 8. start > 0, stop is not None, step > 0, stop > start, exp_base > 0, jitter > 0 \u2192 yields with jitter until stop reached\n\n# path: start <= 0 \u2192 raise ValueError\ndef test_backoff_start_zero_or_negative():\n    with pytest.raises(ValueError):\n        list(backoff(start=0, stop=10))\n    with pytest.raises(ValueError):\n        list(backoff(start=-1, stop=10))\n\n# path: start > 0, stop is None, step <= 0 \u2192 raise ValueError\ndef test_backoff_infinite_step_zero_or_negative():\n    with pytest.raises(ValueError):\n        list(backoff(start=1, stop=None, step=0))\n    with pytest.raises(ValueError):\n        list(backoff(start=1, stop=None, step=-1))\n\n# path: start > 0, stop is None, step > 0 \u2192 infinite loop (test limited consumption)\ndef test_backoff_infinite_step_positive():\n    gen = backoff(start=1, stop=None, step=2)\n    # consume first few values to verify generator works\n    assert next(gen) == 1\n    assert next(gen) == 3  # 1 + 2\n    assert next(gen) == 5  # 3 + 2\n\n# path: start > 0, stop is not None, step <= 0 \u2192 raise ValueError\ndef test_backoff_finite_step_zero_or_negative():\n    with pytest.raises(ValueError):\n        list(backoff(start=1, stop=10, step=0))\n    with pytest.raises(ValueError):\n        list(backoff(start=1, stop=10, step=-1))\n\n# path: start > 0, stop is not None, step > 0, stop <= start \u2192 yields start once then stops\ndef test_backoff_stop_less_or_equal_start():\n    assert list(backoff(start=5, stop=5)) == [5]\n    # The function raises ValueError when stop < start, so we adjust the test.\n    with pytest.raises(ValueError):\n        list(backoff(start=5, stop=3))\n\n# path: start > 0, stop is not None, step > 0, stop > start, exp_base <= 0 \u2192 raise ValueError\ndef test_backoff_exp_base_zero_or_negative():\n    with pytest.raises(ValueError):\n        list(backoff(start=1, stop=10, exp_base=0))\n    with pytest.raises(ValueError):\n        list(backoff(start=1, stop=10, exp_base=-1))\n\n# path: start > 0, stop is not None, step > 0, stop > start, exp_base > 0, jitter <= 0 \u2192 yields until stop reached\ndef test_backoff_no_jitter():\n    result = list(backoff(start=1, stop=10, step=2, exp_base=2, jitter=0))\n    # manual calculation: start=1, step=2, exp_base=2\n    # iteration 0: value=1, next_start=1+2=3\n    # iteration 1: value=3, next_start=3+2*2=7\n    # iteration 2: value=7, next_start=7+2*4=15 > stop \u2192 stop\n    assert result == [1, 3, 7]\n\n# path: start > 0, stop is not None, step > 0, stop > start, exp_base > 0, jitter > 0 \u2192 yields with jitter until stop reached\ndef test_backoff_with_jitter():\n    random.seed(42)  # deterministic test\n    result = list(backoff(start=1, stop=20, step=3, exp_base=1.5, jitter=0.5))\n    # jitter adds randomness, but we can verify length and rough range\n    assert len(result) > 0\n    assert all(1 <= x < 20 for x in result)"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [],
+      "failed": [
+        "test_backoff_with_min_delay_zero",
+        "test_backoff_with_min_delay_one",
+        "test_backoff_with_max_delay_at_boundary",
+        "test_backoff_exceeds_max_delay",
+        "test_backoff_with_factor_one",
+        "test_backoff_with_factor_above_one",
+        "test_backoff_with_jitter_true",
+        "test_backoff_with_jitter_false",
+        "test_backoff_with_zero_iterations",
+        "test_backoff_with_one_iteration",
+        "test_backoff_with_large_iterations",
+        "test_backoff_with_negative_min_delay",
+        "test_backoff_with_min_delay_greater_than_max_delay",
+        "test_backoff_with_factor_zero",
+        "test_backoff_with_factor_negative",
+        "test_backoff_with_max_iterations_negative"
+      ],
+      "errors": [],
+      "stdout": "FFFFFFFFFFFFFFFF                                                         [100%]\n================================== FAILURES ===================================\n______________________ test_backoff_with_min_delay_zero _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:5: in test_backoff_with_min_delay_zero\n    delays = list(backoff(min_delay=0, max_delay=10, factor=2, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_______________________ test_backoff_with_min_delay_one _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:10: in test_backoff_with_min_delay_one\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n___________________ test_backoff_with_max_delay_at_boundary ___________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:14: in test_backoff_with_max_delay_at_boundary\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_______________________ test_backoff_exceeds_max_delay ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:19: in test_backoff_exceeds_max_delay\n    delays = list(backoff(min_delay=9, max_delay=10, factor=2, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n________________________ test_backoff_with_factor_one _________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:25: in test_backoff_with_factor_one\n    delays = list(backoff(min_delay=1, max_delay=5, factor=1, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_____________________ test_backoff_with_factor_above_one ______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:31: in test_backoff_with_factor_above_one\n    delays = list(backoff(min_delay=1, max_delay=20, factor=2, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n________________________ test_backoff_with_jitter_true ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:40: in test_backoff_with_jitter_true\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=True))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_______________________ test_backoff_with_jitter_false ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:45: in test_backoff_with_jitter_false\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n______________________ test_backoff_with_zero_iterations ______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:51: in test_backoff_with_zero_iterations\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=0))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_______________________ test_backoff_with_one_iteration _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:55: in test_backoff_with_one_iteration\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=1))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_____________________ test_backoff_with_large_iterations ______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:60: in test_backoff_with_large_iterations\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=100))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n____________________ test_backoff_with_negative_min_delay _____________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:67: in test_backoff_with_negative_min_delay\n    list(backoff(min_delay=-1, max_delay=10, factor=2, jitter=False))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n_____________ test_backoff_with_min_delay_greater_than_max_delay ______________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:71: in test_backoff_with_min_delay_greater_than_max_delay\n    list(backoff(min_delay=11, max_delay=10, factor=2, jitter=False))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n________________________ test_backoff_with_factor_zero ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:75: in test_backoff_with_factor_zero\n    list(backoff(min_delay=1, max_delay=10, factor=0, jitter=False))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n______________________ test_backoff_with_factor_negative ______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:79: in test_backoff_with_factor_negative\n    list(backoff(min_delay=1, max_delay=10, factor=-1, jitter=False))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n__________________ test_backoff_with_max_iterations_negative __________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_bva.py:82: in test_backoff_with_max_iterations_negative\n    delays = list(backoff(min_delay=1, max_delay=10, factor=2, jitter=False, max_iterations=-1))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'min_delay'\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_min_delay_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_min_delay_one\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_max_delay_at_boundary\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_exceeds_max_delay\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_factor_one\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_factor_above_one\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_jitter_true\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_jitter_false\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_zero_iterations\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_one_iteration\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_large_iterations\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_negative_min_delay\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_min_delay_greater_than_max_delay\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_factor_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_factor_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_bva.py::test_backoff_with_max_iterations_negative\n16 failed in 0.55s\n",
+      "stderr": "",
+      "returncode": 1
+    },
+    "condition": {
+      "passed": [],
+      "failed": [],
+      "errors": [
+        "__collection_error__"
+      ],
+      "stdout": "\n=================================== ERRORS ====================================\n_ ERROR collecting eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_condition.py _\n.venv\\Lib\\site-packages\\_pytest\\python.py:507: in importtestmodule\n    mod = import_path(\n.venv\\Lib\\site-packages\\_pytest\\pathlib.py:587: in import_path\n    importlib.import_module(module_name)\n..\\..\\..\\..\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\importlib\\__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n<frozen importlib._bootstrap>:1387: in _gcd_import\n    ???\n<frozen importlib._bootstrap>:1360: in _find_and_load\n    ???\n<frozen importlib._bootstrap>:1331: in _find_and_load_unlocked\n    ???\n<frozen importlib._bootstrap>:935: in _load_unlocked\n    ???\n.venv\\Lib\\site-packages\\_pytest\\assertion\\rewrite.py:188: in exec_module\n    source_stat, co = _rewrite_test(fn, self.config)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n.venv\\Lib\\site-packages\\_pytest\\assertion\\rewrite.py:357: in _rewrite_test\n    tree = ast.parse(source, filename=strfn)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\ast.py:50: in parse\n    return compile(source, filename, mode, flags,\nE     File \"C:\\Users\\the4r\\OneDrive\\Desktop\\projects\\Generating-Github-Project-Tests\\eval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_condition.py\", line 1\nE       ```python\nE       ^\nE   SyntaxError: invalid syntax\n=========================== short test summary info ===========================\nERROR eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_condition.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.58s\n",
+      "stderr": "",
+      "returncode": 2
+    },
+    "ecp": {
+      "passed": [
+        "test_backoff_invalid_stop_negative",
+        "test_backoff_invalid_jitter_non_boolean"
+      ],
+      "failed": [
+        "test_backoff_valid_start",
+        "test_backoff_valid_start_float",
+        "test_backoff_invalid_start_zero",
+        "test_backoff_invalid_start_negative",
+        "test_backoff_valid_stop",
+        "test_backoff_valid_stop_zero",
+        "test_backoff_valid_factor_int",
+        "test_backoff_valid_factor_float",
+        "test_backoff_invalid_factor_zero",
+        "test_backoff_invalid_factor_negative",
+        "test_backoff_valid_jitter",
+        "test_backoff_valid_jitter_false",
+        "test_backoff_valid_step_int",
+        "test_backoff_valid_step_float",
+        "test_backoff_invalid_step_zero",
+        "test_backoff_invalid_step_negative",
+        "test_backoff_all_defaults",
+        "test_backoff_valid_combination"
+      ],
+      "errors": [],
+      "stdout": "FFFFFF.FFFFFF.FFFFFF                                                     [100%]\n================================== FAILURES ===================================\n__________________________ test_backoff_valid_start ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:13: in test_backoff_valid_start\n    gen = backoff(start=1, stop=None)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_______________________ test_backoff_valid_start_float ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:19: in test_backoff_valid_start_float\n    gen = backoff(start=0.5, stop=None)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_______________________ test_backoff_invalid_start_zero _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:26: in test_backoff_invalid_start_zero\n    gen = backoff(start=0, stop=None)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_____________________ test_backoff_invalid_start_negative _____________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:32: in test_backoff_invalid_start_negative\n    gen = backoff(start=-1, stop=None)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n___________________________ test_backoff_valid_stop ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:42: in test_backoff_valid_stop\n    assert len(delays) == 3\nE   assert 4 == 3\nE    +  where 4 = len([1.0, 2.0, 4.0, 5.0])\n________________________ test_backoff_valid_stop_zero _________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:50: in test_backoff_valid_stop_zero\n    gen = backoff(start=1, stop=0)\n          ^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:646: in backoff_iter\n    raise ValueError('expected stop >= 0')\nE   ValueError: expected stop >= 0\n________________________ test_backoff_valid_factor_int ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:63: in test_backoff_valid_factor_int\n    gen = backoff(start=1, stop=None, factor=2)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_______________________ test_backoff_valid_factor_float _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:74: in test_backoff_valid_factor_float\n    gen = backoff(start=1, stop=None, factor=1.5)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n______________________ test_backoff_invalid_factor_zero _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:86: in test_backoff_invalid_factor_zero\n    gen = backoff(start=1, stop=None, factor=0)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n____________________ test_backoff_invalid_factor_negative _____________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:92: in test_backoff_invalid_factor_negative\n    gen = backoff(start=1, stop=None, factor=-1)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n__________________________ test_backoff_valid_jitter __________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:97: in test_backoff_valid_jitter\n    gen = backoff(start=1, stop=None, jitter=True)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_______________________ test_backoff_valid_jitter_false _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:103: in test_backoff_valid_jitter_false\n    gen = backoff(start=1, stop=None, jitter=False)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_________________________ test_backoff_valid_step_int _________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:126: in test_backoff_valid_step_int\n    gen = backoff(start=1, stop=None, step=2)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n________________________ test_backoff_valid_step_float ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:141: in test_backoff_valid_step_float\n    gen = backoff(start=1, stop=None, step=0.5)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n_______________________ test_backoff_invalid_step_zero ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:153: in test_backoff_invalid_step_zero\n    gen = backoff(start=1, stop=None, step=0)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n_____________________ test_backoff_invalid_step_negative ______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:159: in test_backoff_invalid_step_negative\n    gen = backoff(start=1, stop=None, step=-1)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n__________________________ test_backoff_all_defaults __________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:164: in test_backoff_all_defaults\n    gen = backoff(start=1, stop=None)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:579: in backoff\n    return list(backoff_iter(start, stop, count=count,\n..\\..\\..\\..\\AppData\\Local\\Temp\\tmpbk_wsjin\\boltons\\iterutils.py:639: in backoff_iter\n    stop = float(stop)\n           ^^^^^^^^^^^\nE   TypeError: float() argument must be a string or a real number, not 'NoneType'\n_______________________ test_backoff_valid_combination ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_ecp.py:171: in test_backoff_valid_combination\n    gen = backoff(start=2, stop=3, step=1, factor=2, jitter=False)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_start\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_start_float\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_invalid_start_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_invalid_start_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_stop\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_stop_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_factor_int\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_factor_float\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_invalid_factor_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_invalid_factor_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_jitter\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_jitter_false\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_step_int\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_step_float\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_invalid_step_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_invalid_step_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_all_defaults\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_ecp.py::test_backoff_valid_combination\n18 failed, 2 passed in 0.80s\n",
+      "stderr": "",
+      "returncode": 1
+    },
+    "path": {
+      "passed": [
+        "test_backoff_stop_less_or_equal_start"
+      ],
+      "failed": [
+        "test_backoff_start_zero_or_negative",
+        "test_backoff_infinite_step_zero_or_negative",
+        "test_backoff_infinite_step_positive",
+        "test_backoff_finite_step_zero_or_negative",
+        "test_backoff_exp_base_zero_or_negative",
+        "test_backoff_no_jitter",
+        "test_backoff_with_jitter"
+      ],
+      "errors": [],
+      "stdout": "FFFF.FFF                                                                 [100%]\n================================== FAILURES ===================================\n_____________________ test_backoff_start_zero_or_negative _____________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:18: in test_backoff_start_zero_or_negative\n    with pytest.raises(ValueError):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE <class 'ValueError'>\n_________________ test_backoff_infinite_step_zero_or_negative _________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:26: in test_backoff_infinite_step_zero_or_negative\n    list(backoff(start=1, stop=None, step=0))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n_____________________ test_backoff_infinite_step_positive _____________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:32: in test_backoff_infinite_step_positive\n    gen = backoff(start=1, stop=None, step=2)\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n__________________ test_backoff_finite_step_zero_or_negative __________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:41: in test_backoff_finite_step_zero_or_negative\n    list(backoff(start=1, stop=10, step=0))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n___________________ test_backoff_exp_base_zero_or_negative ____________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:55: in test_backoff_exp_base_zero_or_negative\n    list(backoff(start=1, stop=10, exp_base=0))\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'exp_base'\n___________________________ test_backoff_no_jitter ____________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:61: in test_backoff_no_jitter\n    result = list(backoff(start=1, stop=10, step=2, exp_base=2, jitter=0))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n__________________________ test_backoff_with_jitter ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\backoff_15\\test_path.py:71: in test_backoff_with_jitter\n    result = list(backoff(start=1, stop=20, step=3, exp_base=1.5, jitter=0.5))\n                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: backoff() got an unexpected keyword argument 'step'. Did you mean 'stop'?\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_start_zero_or_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_infinite_step_zero_or_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_infinite_step_positive\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_finite_step_zero_or_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_exp_base_zero_or_negative\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_no_jitter\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/backoff_15/test_path.py::test_backoff_with_jitter\n7 failed, 1 passed in 0.46s\n",
+      "stderr": "",
+      "returncode": 1
+    }
+  },
+  "mutation_score": 1.0,
+  "mutant_count": 9,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "condition": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9
+    ]
+  },
+  "survived_mutants": [],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 1"
+    },
+    {
+      "id": 2,
+      "tag": "llm_mutant",
+      "description": "off-by-one: using `range(len(seq) - 1)` instead of `range(len(seq))`, skips last element"
+    },
+    {
+      "id": 3,
+      "tag": "llm_mutant",
+      "description": "wrong variable: using `max_len` instead of `len(seq)` in inner loop condition, causing early termination"
+    },
+    {
+      "id": 4,
+      "tag": "llm_mutant",
+      "description": "off-by-sign: using `start + backoff_len < len(seq)` instead of `<=`, skips last valid slice"
+    },
+    {
+      "id": 5,
+      "tag": "llm_mutant",
+      "description": "wrong comparison: using `>` instead of `<=` in slice boundary check, yields no items"
+    },
+    {
+      "id": 6,
+      "tag": "llm_mutant",
+      "description": "early return: missing `else` clause for the first for-loop, causing `i` to be undefined when no separator found"
+    },
+    {
+      "id": 7,
+      "tag": "llm_mutant",
+      "description": "off-by-one: using `range(0, max_len)` instead of `range(1, max_len + 1)`, skips full length slice"
+    },
+    {
+      "id": 8,
+      "tag": "llm_mutant",
+      "description": "wrong variable: using `len(seq)` instead of `len(seq[start:])` after separator removal, causing index error"
+    },
+    {
+      "id": 9,
+      "tag": "llm_mutant",
+      "description": "logic inversion: using `sep_func = lambda x: x != sep` instead of `==`, breaks at wrong positions"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 3509 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 278 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 4701 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 3293 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "0 passed, 47 failed, 1 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 4 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "3 passed, 43 failed, 0 errors"
+    },
+    {
+      "step": 8,
+      "action": "fix_tests",
+      "outcome": "fixed 4 test types"
+    },
+    {
+      "step": 9,
+      "action": "run_tests",
+      "outcome": "3 passed, 43 failed, 0 errors"
+    },
+    {
+      "step": 10,
+      "action": "run_mutation_testing",
+      "outcome": "8/8 killed (100.0%), llm=100.0%, quality=0.59"
+    },
+    {
+      "step": 11,
+      "action": "run_coverage",
+      "outcome": "line: 0.0%, branch: 0.0%, quality=0.59"
+    },
+    {
+      "step": 12,
+      "action": "generate_bva_tests",
+      "outcome": "generated 2992 chars"
+    },
+    {
+      "step": 13,
+      "action": "run_tests",
+      "outcome": "3 passed, 43 failed, 0 errors"
+    },
+    {
+      "step": 14,
+      "action": "run_mutation_testing",
+      "outcome": "3/5 killed (60.0%), llm=50.0%, quality=0.39"
+    },
+    {
+      "step": 15,
+      "action": "run_coverage",
+      "outcome": "line: 0.0%, branch: 0.0%, quality=0.39"
+    },
+    {
+      "step": 16,
+      "action": "generate_condition_tests",
+      "outcome": "generated 5896 chars"
+    },
+    {
+      "step": 17,
+      "action": "run_tests",
+      "outcome": "3 passed, 41 failed, 1 errors"
+    },
+    {
+      "step": 18,
+      "action": "run_mutation_testing",
+      "outcome": "9/9 killed (100.0%), llm=100.0%, quality=0.60"
+    },
+    {
+      "step": 19,
+      "action": "run_coverage",
+      "outcome": "line: 0.0%, branch: 0.0%, quality=0.60"
+    },
+    {
+      "step": 20,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 3728 chars"
+    }
+  ],
+  "step_count": 20,
+  "done": false,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 2,
+  "line_coverage": 0.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.5878787878787879,
+  "test_diversity": 0.13333333333333333,
+  "quality_score": 0.6015,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [
+    170
+  ],
+  "missing_branches": [
+    [
+      170,
+      -170
+    ],
+    [
+      170,
+      172
+    ]
+  ],
+  "score_history": [
+    0.5862,
+    0.3872,
+    0.6015
+  ],
+  "grpo_rewards": {
+    "mutation": 1.0,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.5878787878787879,
+    "test_diversity": 0.13333333333333333,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.6015
+  }
+}

@@ -1,0 +1,155 @@
+{
+  "function_info": {
+    "name": "n_sum",
+    "file_path": "algorithms\\array\\n_sum.py",
+    "language": "python"
+  },
+  "index": 0,
+  "generated_tests": {
+    "bva": "import pytest\nfrom algorithms.array.n_sum import _sum_closure_default\n\ndef test_sum_closure_default_with_integers_at_zero():\n    assert _sum_closure_default(0, 0) == 0\n\ndef test_sum_closure_default_with_integers_at_positive_boundary():\n    assert _sum_closure_default(1, 1) == 2\n\ndef test_sum_closure_default_with_integers_at_negative_boundary():\n    assert _sum_closure_default(-1, -1) == -2\n\ndef test_sum_closure_default_with_floats_at_zero():\n    assert _sum_closure_default(0.0, 0.0) == 0.0\n\ndef test_sum_closure_default_with_floats_at_small_positive():\n    assert _sum_closure_default(0.1, 0.2) == pytest.approx(0.3)\n\ndef test_sum_closure_default_with_floats_at_small_negative():\n    assert _sum_closure_default(-0.1, -0.2) == pytest.approx(-0.3)\n\ndef test_sum_closure_default_with_strings_empty():\n    assert _sum_closure_default(\"\", \"\") == \"\"\n\ndef test_sum_closure_default_with_strings_single_char():\n    assert _sum_closure_default(\"a\", \"b\") == \"ab\"\n\ndef test_sum_closure_default_with_lists_empty():\n    assert _sum_closure_default([], []) == []\n\ndef test_sum_closure_default_with_lists_single_element():\n    assert _sum_closure_default([1], [2]) == [1, 2]\n\ndef test_sum_closure_default_with_none():\n    with pytest.raises(TypeError):\n        _sum_closure_default(None, None)\n\ndef test_sum_closure_default_mixed_types_raises():\n    with pytest.raises(TypeError):\n        _sum_closure_default(1, \"a\")",
+    "condition": "from algorithms.array.n_sum import _sum_closure_default\n\ndef test_sum_closure_default_integers():\n    assert _sum_closure_default(1, 2) == 3\n\ndef test_sum_closure_default_strings():\n    assert _sum_closure_default(\"a\", \"b\") == \"ab\"\n\ndef test_sum_closure_default_lists():\n    assert _sum_closure_default([1], [2]) == [1, 2]",
+    "ecp": "import pytest\nfrom algorithms.array.n_sum import _sum_closure_default\n\n# Valid equivalence class: both arguments are integers\ndef test_sum_closure_default_integers():\n    assert _sum_closure_default(3, 5) == 8\n\n# Valid equivalence class: both arguments are floats\ndef test_sum_closure_default_floats():\n    assert _sum_closure_default(2.5, 3.1) == 5.6\n\n# Valid equivalence class: both arguments are strings (concatenation)\ndef test_sum_closure_default_strings():\n    assert _sum_closure_default(\"hello\", \"world\") == \"helloworld\"\n\n# Valid equivalence class: both arguments are lists (concatenation)\ndef test_sum_closure_default_lists():\n    assert _sum_closure_default([1, 2], [3, 4]) == [1, 2, 3, 4]\n\n# Valid equivalence class: mixed numeric types (int + float)\ndef test_sum_closure_default_mixed_numeric():\n    assert _sum_closure_default(4, 2.5) == 6.5\n\n# Valid equivalence class: one argument is None (if addition with None is defined by Python's behavior)\ndef test_sum_closure_default_with_none():\n    with pytest.raises(TypeError):\n        _sum_closure_default(None, 5)\n\n# Valid equivalence class: both arguments are None\ndef test_sum_closure_default_both_none():\n    with pytest.raises(TypeError):\n        _sum_closure_default(None, None)\n\n# Valid equivalence class: boolean values (True + True)\ndef test_sum_closure_default_booleans():\n    assert _sum_closure_default(True, False) == 1  # True is 1, False is 0\n\n# Valid equivalence class: complex numbers\ndef test_sum_closure_default_complex():\n    assert _sum_closure_default(1+2j, 3+4j) == (4+6j)\n\n# Valid equivalence class: dictionary (if Python's + is not defined, will raise TypeError)\ndef test_sum_closure_default_dict():\n    with pytest.raises(TypeError):\n        _sum_closure_default({\"a\": 1}, {\"b\": 2})",
+    "path": "import pytest\nfrom algorithms.array.n_sum import n_sum\n\ndef test_sum_closure_default_integers():\n    # The n_sum function returns a closure that uses _sum_closure_default internally\n    # For two numbers, n_sum should return their sum\n    assert n_sum(5, 3) == 8\n\ndef test_sum_closure_default_strings():\n    assert n_sum(\"hello\", \" world\") == \"hello world\"\n\ndef test_sum_closure_default_floats():\n    assert n_sum(2.5, 3.5) == 6.0\n\ndef test_sum_closure_default_mixed_numeric():\n    assert n_sum(2, 3.5) == 5.5\n\ndef test_sum_closure_default_lists():\n    assert n_sum([1, 2], [3, 4]) == [1, 2, 3, 4]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [],
+      "failed": [],
+      "errors": [
+        "__collection_error__"
+      ],
+      "stdout": "\n=================================== ERRORS ====================================\n_ ERROR collecting eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_bva.py _\nImportError while importing test module 'C:\\Users\\the4r\\OneDrive\\Desktop\\projects\\Generating-Github-Project-Tests\\eval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_bva.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\..\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\importlib\\__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_bva.py:2: in <module>\n    from algorithms.array.n_sum import _sum_closure_default\nE   ImportError: cannot import name '_sum_closure_default' from 'algorithms.array.n_sum' (C:\\Users\\the4r\\AppData\\Local\\Temp\\tmpms7ij9df\\algorithms\\array\\n_sum.py)\n=========================== short test summary info ===========================\nERROR eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_bva.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.57s\n",
+      "stderr": "",
+      "returncode": 2
+    },
+    "condition": {
+      "passed": [],
+      "failed": [],
+      "errors": [
+        "__collection_error__"
+      ],
+      "stdout": "\n=================================== ERRORS ====================================\n_ ERROR collecting eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_condition.py _\nImportError while importing test module 'C:\\Users\\the4r\\OneDrive\\Desktop\\projects\\Generating-Github-Project-Tests\\eval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_condition.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\..\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\importlib\\__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_condition.py:1: in <module>\n    from algorithms.array.n_sum import _sum_closure_default\nE   ImportError: cannot import name '_sum_closure_default' from 'algorithms.array.n_sum' (C:\\Users\\the4r\\AppData\\Local\\Temp\\tmpms7ij9df\\algorithms\\array\\n_sum.py)\n=========================== short test summary info ===========================\nERROR eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_condition.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.56s\n",
+      "stderr": "",
+      "returncode": 2
+    },
+    "ecp": {
+      "passed": [],
+      "failed": [],
+      "errors": [
+        "__collection_error__"
+      ],
+      "stdout": "\n=================================== ERRORS ====================================\n_ ERROR collecting eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_ecp.py _\nImportError while importing test module 'C:\\Users\\the4r\\OneDrive\\Desktop\\projects\\Generating-Github-Project-Tests\\eval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_ecp.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\..\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\importlib\\__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_ecp.py:2: in <module>\n    from algorithms.array.n_sum import _sum_closure_default\nE   ImportError: cannot import name '_sum_closure_default' from 'algorithms.array.n_sum' (C:\\Users\\the4r\\AppData\\Local\\Temp\\tmpms7ij9df\\algorithms\\array\\n_sum.py)\n=========================== short test summary info ===========================\nERROR eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_ecp.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.56s\n",
+      "stderr": "",
+      "returncode": 2
+    },
+    "path": {
+      "passed": [],
+      "failed": [
+        "test_sum_closure_default_integers",
+        "test_sum_closure_default_strings",
+        "test_sum_closure_default_floats",
+        "test_sum_closure_default_mixed_numeric",
+        "test_sum_closure_default_lists"
+      ],
+      "errors": [],
+      "stdout": "FFFFF                                                                    [100%]\n================================== FAILURES ===================================\n______________________ test_sum_closure_default_integers ______________________\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_path.py:7: in test_sum_closure_default_integers\n    assert n_sum(5, 3) == 8\n           ^^^^^^^^^^^\nE   TypeError: n_sum() missing 1 required positional argument: 'target'\n______________________ test_sum_closure_default_strings _______________________\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_path.py:10: in test_sum_closure_default_strings\n    assert n_sum(\"hello\", \" world\") == \"hello world\"\n           ^^^^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: n_sum() missing 1 required positional argument: 'target'\n_______________________ test_sum_closure_default_floats _______________________\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_path.py:13: in test_sum_closure_default_floats\n    assert n_sum(2.5, 3.5) == 6.0\n           ^^^^^^^^^^^^^^^\nE   TypeError: n_sum() missing 1 required positional argument: 'target'\n___________________ test_sum_closure_default_mixed_numeric ____________________\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_path.py:16: in test_sum_closure_default_mixed_numeric\n    assert n_sum(2, 3.5) == 5.5\n           ^^^^^^^^^^^^^\nE   TypeError: n_sum() missing 1 required positional argument: 'target'\n_______________________ test_sum_closure_default_lists ________________________\neval_output\\23-03-2026_11-40\\algorithms\\test_cases\\n_sum_0\\test_path.py:19: in test_sum_closure_default_lists\n    assert n_sum([1, 2], [3, 4]) == [1, 2, 3, 4]\n           ^^^^^^^^^^^^^^^^^^^^^\nE   TypeError: n_sum() missing 1 required positional argument: 'target'\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_path.py::test_sum_closure_default_integers\nFAILED eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_path.py::test_sum_closure_default_strings\nFAILED eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_path.py::test_sum_closure_default_floats\nFAILED eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_path.py::test_sum_closure_default_mixed_numeric\nFAILED eval_output/23-03-2026_11-40/algorithms/test_cases/n_sum_0/test_path.py::test_sum_closure_default_lists\n5 failed in 0.51s\n",
+      "stderr": "",
+      "returncode": 1
+    }
+  },
+  "mutation_score": 0.0,
+  "mutant_count": 0,
+  "agent_kills": {},
+  "survived_mutants": [],
+  "killed_mutants": [],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1407 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 487 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1768 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 993 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "0 passed, 0 failed, 4 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 4 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "0 passed, 0 failed, 4 errors"
+    },
+    {
+      "step": 8,
+      "action": "fix_tests",
+      "outcome": "fixed 4 test types"
+    },
+    {
+      "step": 9,
+      "action": "run_tests",
+      "outcome": "0 passed, 5 failed, 3 errors"
+    },
+    {
+      "step": 10,
+      "action": "run_mutation_testing",
+      "outcome": "no passing tests, skipping mutation testing"
+    },
+    {
+      "step": 11,
+      "action": "run_coverage",
+      "outcome": "no passing tests, skipping coverage"
+    },
+    {
+      "step": 12,
+      "action": "stop",
+      "outcome": "stopped"
+    }
+  ],
+  "step_count": 12,
+  "done": true,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 2,
+  "line_coverage": 0.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {},
+  "assertion_density": 0.2777777777777778,
+  "test_diversity": 0.0,
+  "quality_score": 0.0,
+  "llm_mutation_score": 0.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [],
+  "grpo_rewards": {
+    "mutation": 0.0,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.0,
+    "test_diversity": 0.0,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 0.0,
+    "quality_score": 0.0
+  }
+}

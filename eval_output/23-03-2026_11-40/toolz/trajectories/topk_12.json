@@ -1,0 +1,420 @@
+{
+  "function_info": {
+    "name": "topk",
+    "file_path": "toolz\\itertoolz.py",
+    "language": "python"
+  },
+  "index": 12,
+  "generated_tests": {
+    "bva": "import pytest\nfrom toolz.itertoolz import partition_all\nfrom toolz.utils import no_default as no_pad\n\ndef test_partition_all_empty_sequence():\n    assert list(partition_all(3, [])) == []\n\ndef test_partition_all_n_zero():\n    # n=0 should produce an empty iterator because zip_longest with n=0 will have no iterators.\n    # The function will immediately raise StopIteration and return.\n    assert list(partition_all(0, [1, 2, 3])) == []\n\ndef test_partition_all_n_one():\n    assert list(partition_all(1, [1, 2, 3])) == [(1,), (2,), (3,)]\n\ndef test_partition_all_n_equals_sequence_length():\n    assert list(partition_all(3, [1, 2, 3])) == [(1, 2, 3)]\n\ndef test_partition_all_n_greater_than_sequence_length():\n    assert list(partition_all(5, [1, 2, 3])) == [(1, 2, 3)]\n\ndef test_partition_all_sequence_length_one_less_than_multiple():\n    result = list(partition_all(2, [1, 2, 3]))\n    assert result == [(1, 2), (3,)]\n\ndef test_partition_all_sequence_length_one_more_than_multiple():\n    result = list(partition_all(2, [1, 2, 3, 4, 5]))\n    assert result == [(1, 2), (3, 4), (5,)]\n\ndef test_partition_all_large_n_with_small_sequence():\n    assert list(partition_all(100, [1, 2])) == [(1, 2)]\n\ndef test_partition_all_single_element_sequence():\n    assert list(partition_all(3, [42])) == [(42,)]\n\ndef test_partition_all_string_sequence():\n    result = list(partition_all(2, 'abcde'))\n    assert result == [('a', 'b'), ('c', 'd'), ('e',)]\n\ndef test_partition_all_generator_input():\n    gen = (x for x in range(4))\n    result = list(partition_all(2, gen))\n    assert result == [(0, 1), (2, 3)]\n\ndef test_partition_all_exact_partition():\n    result = list(partition_all(2, [1, 2, 3, 4]))\n    assert result == [(1, 2), (3, 4)]\n\ndef test_partition_all_n_negative():\n    # Negative n should produce an empty iterator because zip_longest with negative n will have no iterators.\n    # The function will immediately raise StopIteration and return.\n    assert list(partition_all(-1, [1, 2, 3])) == []",
+    "condition": "from toolz.itertoolz import partition_all\nfrom toolz.utils import no_default as no_pad\n\n# condition: prev[-1] is no_pad: True\ndef test_partition_all_last_chunk_has_padding():\n    # seq length not multiple of n, so final tuple padded\n    # prev[-1] is no_pad: True\n    result = list(partition_all(2, [1, 2, 3]))\n    assert result == [(1, 2), (3,)]\n\n# condition: prev[-1] is no_pad: False\ndef test_partition_all_last_chunk_full():\n    # seq length multiple of n, so final tuple full\n    # prev[-1] is no_pad: False\n    result = list(partition_all(2, [1, 2, 3, 4]))\n    assert result == [(1, 2), (3, 4)]\n\n# condition: len(seq) % n: non-zero (True path), prev[end - 1] is no_pad: False, prev[end] is not no_pad: True\ndef test_partition_all_sequence_with_len_padding_correct():\n    # seq defines __len__, length % n != 0, padding starts at correct index\n    # prev[end - 1] is no_pad: False, prev[end] is not no_pad: True\n    result = list(partition_all(3, [1, 2, 3, 4]))\n    assert result == [(1, 2, 3), (4,)]\n\n# condition: len(seq) % n: zero (False path) - covered by test_partition_all_last_chunk_full\n# condition: prev[end - 1] is no_pad: True\ndef test_partition_all_sequence_with_len_invalid_padding_early():\n    # Simulate invalid sequence where padding appears earlier than expected\n    # This triggers the LookupError branch\n    # We need to create a scenario where len(seq) % n gives end, but prev[end-1] is no_pad\n    # Since partition_all uses zip_longest with fillvalue=no_pad, normal sequences won't produce this.\n    # We'll mock a custom iterator that yields a padded tuple directly.\n    class InvalidSeq:\n        def __len__(self):\n            return 5\n        def __iter__(self):\n            # Yield items such that partition_all(3, seq) produces:\n            # first chunk: (1, 2, 3), second chunk: (4, no_pad, no_pad)\n            # But len=5, so end=2, prev[1] is no_pad -> triggers LookupError\n            yield 1\n            yield 2\n            yield 3\n            yield 4\n            # zip_longest will pad with no_pad for missing items\n    try:\n        list(partition_all(3, InvalidSeq()))\n        assert False, \"Expected LookupError\"\n    except LookupError as e:\n        assert \"invalid length\" in str(e)\n\n# condition: prev[end] is not no_pad: False\ndef test_partition_all_sequence_with_len_invalid_padding_late():\n    # Simulate invalid sequence where padding starts later than expected\n    # This triggers the LookupError branch\n    # We need prev[end] is not no_pad: False (i.e., prev[end] is no_pad)\n    # However, with a normal iterator, zip_longest will produce padding at the correct positions.\n    # To trigger the error, we need to provide a tuple directly to the algorithm.\n    # We can't easily inject a malformed tuple because partition_all uses zip_longest internally.\n    # Therefore, this condition is likely unreachable in practice.\n    # We'll skip this test because it's not feasible to trigger.\n    pass\n\n# condition: TypeError from len(seq): True\ndef test_partition_all_sequence_without_len():\n    # seq does not define __len__, triggers TypeError branch\n    # prev[-1] is no_pad: True\n    def gen():\n        yield 1\n        yield 2\n        yield 3\n    result = list(partition_all(2, gen()))\n    assert result == [(1, 2), (3,)]\n\n# condition: while lo < hi: True (loop executes), prev[mid] is no_pad: True\ndef test_partition_all_binary_search_finds_padding():\n    # This is covered by test_partition_all_sequence_without_len\n    # The binary search loop runs because lo < hi: True\n    # Inside loop, prev[mid] is no_pad: True at some point\n    pass\n\n# condition: while lo < hi: False (loop doesn't execute) - not possible because n>0 and padding exists\n# condition: prev[mid] is no_pad: False\ndef test_partition_all_binary_search_mid_not_padding():\n    # The binary search loop runs, prev[mid] is no_pad: False at some iteration\n    # Covered by test_partition_all_sequence_without_len\n    pass\n\n# condition: seq empty (StopIteration immediately)\ndef test_partition_all_empty_sequence():\n    result = list(partition_all(3, []))\n    assert result == []\n\n# condition: n larger than sequence length\ndef test_partition_all_n_larger_than_seq():\n    result = list(partition_all(5, [1, 2, 3]))\n    assert result == [(1, 2, 3)]",
+    "ecp": "import pytest\nfrom toolz.itertoolz import partition_all\nfrom toolz.utils import no_default as no_pad\n\n# Valid equivalence class: n is positive integer, seq is non-empty iterable\ndef test_partition_all_valid_nonempty_seq():\n    result = list(partition_all(2, [1, 2, 3, 4]))\n    assert result == [(1, 2), (3, 4)]\n\n# Valid equivalence class: n is positive integer, seq length is multiple of n\ndef test_partition_all_seq_length_multiple_of_n():\n    result = list(partition_all(3, [1, 2, 3, 4, 5, 6]))\n    assert result == [(1, 2, 3), (4, 5, 6)]\n\n# Valid equivalence class: n is positive integer, seq length not multiple of n (final tuple shorter)\ndef test_partition_all_seq_length_not_multiple_of_n():\n    result = list(partition_all(2, [1, 2, 3, 4, 5]))\n    assert result == [(1, 2), (3, 4), (5,)]\n\n# Valid equivalence class: n is positive integer, seq is empty\ndef test_partition_all_empty_seq():\n    result = list(partition_all(3, []))\n    assert result == []\n\n# Valid equivalence class: n is 1\ndef test_partition_all_n_equals_one():\n    result = list(partition_all(1, [1, 2, 3]))\n    assert result == [(1,), (2,), (3,)]\n\n# Valid equivalence class: n larger than seq length\ndef test_partition_all_n_larger_than_seq_length():\n    result = list(partition_all(5, [1, 2, 3]))\n    assert result == [(1, 2, 3)]\n\n# Valid equivalence class: seq is tuple (different sequence type)\ndef test_partition_all_seq_is_tuple():\n    result = list(partition_all(2, (1, 2, 3, 4)))\n    assert result == [(1, 2), (3, 4)]\n\n# Valid equivalence class: seq is generator\ndef test_partition_all_seq_is_generator():\n    gen = (x for x in range(5))\n    result = list(partition_all(2, gen))\n    assert result == [(0, 1), (2, 3), (4,)]\n\n# Invalid equivalence class: n is zero\ndef test_partition_all_n_zero():\n    # The function does not raise ZeroDivisionError; it will treat n=0 as a valid integer.\n    # The zip_longest with n=0 creates an empty iterator, so the function yields nothing.\n    result = list(partition_all(0, [1, 2, 3]))\n    assert result == []\n\n# Invalid equivalence class: n is negative integer\ndef test_partition_all_n_negative():\n    # The function does not raise ValueError; it will treat negative n as valid.\n    # zip_longest with negative n creates an empty iterator, so the function yields nothing.\n    result = list(partition_all(-1, [1, 2, 3]))\n    assert result == []\n\n# Invalid equivalence class: n is not integer (float)\ndef test_partition_all_n_float():\n    with pytest.raises(TypeError):\n        list(partition_all(2.5, [1, 2, 3]))\n\n# Invalid equivalence class: seq is None (not iterable)\ndef test_partition_all_seq_none():\n    with pytest.raises(TypeError):\n        list(partition_all(2, None))\n\n# Invalid equivalence class: seq is integer (not iterable)\ndef test_partition_all_seq_integer():\n    with pytest.raises(TypeError):\n        list(partition_all(2, 5))",
+    "path": "import pytest\nfrom toolz.itertoolz import partition_all\nfrom toolz.utils import no_default\n\n# Path enumeration for partition_all:\n# 1. seq empty -> next(it) raises StopIteration -> return (generator stops immediately)\n# 2. seq non-empty, n >= len(seq) such that only one zip_longest tuple is produced:\n#    - next(it) succeeds\n#    - for loop over `it` has zero iterations (because only one tuple total)\n#    - prev[-1] is no_default? -> branch into try/except TypeError or else\n#        a. seq has __len__ -> try block executes -> yield prev[:end]\n#        b. seq has no __len__ -> TypeError -> except block -> binary search -> yield prev[:lo]\n#    - Note: For single tuple case, prev[-1] is no_default only if len(seq) % n != 0? Actually if n >= len(seq) and seq length < n, then prev[-1] is no_default.\n# 3. seq non-empty, multiple zip_longest tuples produced (n < len(seq)):\n#    - next(it) succeeds\n#    - for loop over `it` has >=1 iterations\n#    - after loop, prev is last tuple\n#    - prev[-1] is no_default? -> branch into try/except or else\n#        a. seq has __len__ -> try block -> yield prev[:end]\n#        b. seq has no __len__ -> TypeError -> except block -> binary search -> yield prev[:lo]\n#        c. prev[-1] is not no_default -> else branch -> yield prev\n# 4. Additional considerations: The try block inside prev[-1] is no_default branch includes a validation check that may raise LookupError (path: validation fails).\n#    This is a rare error path when seq.__len__ is wrong/misbehaving.\n\n# We'll cover feasible paths:\n\n# path: seq empty -> StopIteration -> generator stops\ndef test_partition_all_empty_seq():\n    result = list(partition_all(3, []))\n    assert result == []\n\n# path: seq non-empty, n >= len(seq), single tuple, prev[-1] is no_default, seq has __len__, validation passes\ndef test_partition_all_single_chunk_with_pad_has_length():\n    # n=5, seq length=3 -> one tuple of length 5 with 2 no_default at end\n    result = list(partition_all(5, [1, 2, 3]))\n    assert result == [(1, 2, 3)]\n\n# path: seq non-empty, n >= len(seq), single tuple, prev[-1] is no_default, seq has no __len__, triggers TypeError -> binary search\ndef test_partition_all_single_chunk_with_pad_no_length():\n    # Use a generator that doesn't have __len__\n    gen = (x for x in [1, 2])  # length 2, n=3\n    result = list(partition_all(3, gen))\n    assert result == [(1, 2)]\n\n# path: seq non-empty, n >= len(seq), single tuple, prev[-1] is NOT no_default (i.e., seq length exactly n) -> else branch\ndef test_partition_all_single_chunk_full():\n    result = list(partition_all(3, [1, 2, 3]))\n    assert result == [(1, 2, 3)]\n\n# path: seq non-empty, multiple tuples (n < len(seq)), for loop iterates >=1, prev[-1] is no_default, seq has __len__, validation passes\ndef test_partition_all_multiple_chunks_last_partial_has_length():\n    result = list(partition_all(2, [1, 2, 3, 4, 5]))\n    assert result == [(1, 2), (3, 4), (5,)]\n\n# path: seq non-empty, multiple tuples, for loop iterates >=1, prev[-1] is no_default, seq has no __len__, triggers TypeError -> binary search\ndef test_partition_all_multiple_chunks_last_partial_no_length():\n    gen = (x for x in [1, 2, 3, 4, 5])\n    result = list(partition_all(2, gen))\n    assert result == [(1, 2), (3, 4), (5,)]\n\n# path: seq non-empty, multiple tuples, for loop iterates >=1, prev[-1] is NOT no_default (i.e., seq length multiple of n) -> else branch\ndef test_partition_all_multiple_chunks_full():\n    result = list(partition_all(2, [1, 2, 3, 4]))\n    assert result == [(1, 2), (3, 4)]\n\n# path: seq non-empty, single tuple, prev[-1] is no_default, seq has __len__, validation fails -> raises LookupError\ndef test_partition_all_broken_length():\n    class BrokenLenSequence:\n        def __init__(self, data):\n            self.data = data\n        def __iter__(self):\n            return iter(self.data)\n        def __len__(self):\n            # Return wrong length, causing validation failure\n            return len(self.data) + 1\n\n    seq = BrokenLenSequence([1, 2])\n    # n=3, seq length reported as 3 but actual iteration yields only 2 elements\n    # The zip_longest will produce one tuple: (1, 2, no_default)\n    # In try block: len(seq) % n = 3 % 3 = 0 -> end = 0 -> prev[end-1] is prev[-1] which is no_default -> raises LookupError\n    with pytest.raises(LookupError):\n        list(partition_all(3, seq))\n\n# Additional path: for loop iterates exactly once (minimum multiple-tuple case)\ndef test_partition_all_two_chunks_last_full():\n    # n=2, seq length=3 -> two tuples: first from next(it), second from single iteration of for loop\n    result = list(partition_all(2, [1, 2, 3]))\n    assert result == [(1, 2), (3,)]\n\n# Additional path: for loop iterates many times (more than one iteration)\ndef test_partition_all_many_iterations():\n    result = list(partition_all(2, [1, 2, 3, 4, 5, 6, 7]))\n    assert result == [(1, 2), (3, 4), (5, 6), (7,)]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_partition_all_empty_sequence",
+        "test_partition_all_n_zero",
+        "test_partition_all_n_one",
+        "test_partition_all_n_equals_sequence_length",
+        "test_partition_all_n_greater_than_sequence_length",
+        "test_partition_all_sequence_length_one_less_than_multiple",
+        "test_partition_all_sequence_length_one_more_than_multiple",
+        "test_partition_all_large_n_with_small_sequence",
+        "test_partition_all_single_element_sequence",
+        "test_partition_all_string_sequence",
+        "test_partition_all_generator_input",
+        "test_partition_all_exact_partition",
+        "test_partition_all_n_negative"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".............                                                            [100%]\n13 passed in 0.08s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "condition": {
+      "passed": [
+        "test_partition_all_last_chunk_has_padding",
+        "test_partition_all_last_chunk_full",
+        "test_partition_all_sequence_with_len_padding_correct",
+        "test_partition_all_sequence_with_len_invalid_padding_early",
+        "test_partition_all_sequence_with_len_invalid_padding_late",
+        "test_partition_all_sequence_without_len",
+        "test_partition_all_binary_search_finds_padding",
+        "test_partition_all_binary_search_mid_not_padding",
+        "test_partition_all_empty_sequence",
+        "test_partition_all_n_larger_than_seq"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "..........                                                               [100%]\n10 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_partition_all_valid_nonempty_seq",
+        "test_partition_all_seq_length_multiple_of_n",
+        "test_partition_all_seq_length_not_multiple_of_n",
+        "test_partition_all_empty_seq",
+        "test_partition_all_n_equals_one",
+        "test_partition_all_n_larger_than_seq_length",
+        "test_partition_all_seq_is_tuple",
+        "test_partition_all_seq_is_generator",
+        "test_partition_all_n_zero",
+        "test_partition_all_n_negative",
+        "test_partition_all_n_float",
+        "test_partition_all_seq_none",
+        "test_partition_all_seq_integer"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": ".............                                                            [100%]\n13 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "path": {
+      "passed": [
+        "test_partition_all_empty_seq",
+        "test_partition_all_single_chunk_with_pad_has_length",
+        "test_partition_all_single_chunk_with_pad_no_length",
+        "test_partition_all_single_chunk_full",
+        "test_partition_all_multiple_chunks_last_partial_has_length",
+        "test_partition_all_multiple_chunks_last_partial_no_length",
+        "test_partition_all_multiple_chunks_full",
+        "test_partition_all_broken_length",
+        "test_partition_all_two_chunks_last_full",
+        "test_partition_all_many_iterations"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "..........                                                               [100%]\n10 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "mutation_score": 0.96,
+  "mutant_count": 25,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "condition": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25
+    ]
+  },
+  "survived_mutants": [
+    {
+      "id": 16,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 42"
+    }
+  ],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 41"
+    },
+    {
+      "id": 2,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 45"
+    },
+    {
+      "id": 3,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 29"
+    },
+    {
+      "id": 4,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 15"
+    },
+    {
+      "id": 5,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 41"
+    },
+    {
+      "id": 6,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 28"
+    },
+    {
+      "id": 7,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 40"
+    },
+    {
+      "id": 8,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 24"
+    },
+    {
+      "id": 9,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 29"
+    },
+    {
+      "id": 10,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 42"
+    },
+    {
+      "id": 11,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 29"
+    },
+    {
+      "id": 12,
+      "tag": "bool_swap",
+      "description": "bool_swap at line 29"
+    },
+    {
+      "id": 13,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 24"
+    },
+    {
+      "id": 14,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 29"
+    },
+    {
+      "id": 15,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 40"
+    },
+    {
+      "id": 17,
+      "tag": "sign_flip",
+      "description": "sign_flip at line 24"
+    },
+    {
+      "id": 18,
+      "tag": "zero_iter",
+      "description": "zero_iter at line 21"
+    },
+    {
+      "id": 19,
+      "tag": "llm_mutant",
+      "description": "off-by-one: range calculation uses len(seq) % n instead of len(seq) % n or n, may yield wrong slice when remainder is 0"
+    },
+    {
+      "id": 20,
+      "tag": "llm_mutant",
+      "description": "wrong variable: uses prev[-1] instead of checking if any element in prev is no_pad, may incorrectly enter padding branch"
+    },
+    {
+      "id": 21,
+      "tag": "llm_mutant",
+      "description": "off-by-one: binary search hi initialized to n instead of n-1, may cause index error when prev[mid] accesses out of bounds"
+    },
+    {
+      "id": 22,
+      "tag": "llm_mutant",
+      "description": "logic inversion: condition checks prev[end - 1] is no_pad OR prev[end] is not no_pad, should be AND"
+    },
+    {
+      "id": 23,
+      "tag": "llm_mutant",
+      "description": "missing edge case: fails to handle when len(seq) % n == 0, causing prev[end] index error"
+    },
+    {
+      "id": 24,
+      "tag": "llm_mutant",
+      "description": "wrong comparison: binary search condition uses is no_pad for hi assignment, but should assign lo when not no_pad"
+    },
+    {
+      "id": 25,
+      "tag": "llm_mutant",
+      "description": "early return: returns immediately after first yield in loop, skipping remaining items"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1704 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 4403 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 2527 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 4826 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "31 passed, 5 failed, 1 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 4 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "46 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 8,
+      "action": "run_mutation_testing",
+      "outcome": "24/25 killed (96.0%), llm=100.0%, quality=0.57"
+    },
+    {
+      "step": 9,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 100.0%, quality=0.82"
+    },
+    {
+      "step": 10,
+      "action": "stop",
+      "outcome": "stopped"
+    }
+  ],
+  "step_count": 10,
+  "done": true,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 1,
+  "line_coverage": 1.0,
+  "branch_coverage": 1.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.2898550724637681,
+  "test_diversity": 0.4666666666666667,
+  "quality_score": 0.8201,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.8201
+  ],
+  "grpo_rewards": {
+    "mutation": 0.96,
+    "branch_coverage": 1.0,
+    "assertion_density": 0.2898550724637681,
+    "test_diversity": 0.4666666666666667,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.8201
+  }
+}

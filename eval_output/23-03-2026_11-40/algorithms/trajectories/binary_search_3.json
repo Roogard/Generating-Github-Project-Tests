@@ -1,0 +1,369 @@
+{
+  "function_info": {
+    "name": "binary_search",
+    "file_path": "algorithms\\searching\\binary_search.py",
+    "language": "python"
+  },
+  "index": 3,
+  "generated_tests": {
+    "bva": "import pytest\nfrom algorithms.searching.binary_search import binary_search\n\ndef test_empty_array():\n    assert binary_search([], 5) == -1\n\ndef test_single_element_found():\n    assert binary_search([7], 7) == 0\n\ndef test_single_element_not_found():\n    assert binary_search([7], 5) == -1\n\ndef test_two_elements_find_first():\n    assert binary_search([1, 2], 1) == 0\n\ndef test_two_elements_find_second():\n    assert binary_search([1, 2], 2) == 1\n\ndef test_three_elements_find_middle():\n    assert binary_search([1, 2, 3], 2) == 1\n\ndef test_query_at_lower_bound():\n    assert binary_search([0, 10, 20, 30, 40], 0) == 0\n\ndef test_query_at_upper_bound():\n    assert binary_search([0, 10, 20, 30, 40], 40) == 4\n\ndef test_query_just_above_lower_bound():\n    assert binary_search([0, 10, 20, 30, 40], 10) == 1\n\ndef test_query_just_below_upper_bound():\n    assert binary_search([0, 10, 20, 30, 40], 30) == 3\n\ndef test_query_below_all_elements():\n    assert binary_search([10, 20, 30, 40, 50], 5) == -1\n\ndef test_query_above_all_elements():\n    assert binary_search([10, 20, 30, 40, 50], 55) == -1\n\ndef test_query_between_elements():\n    assert binary_search([10, 20, 30, 40, 50], 25) == -1\n\ndef test_large_array_find_first():\n    arr = list(range(1000))\n    assert binary_search(arr, 0) == 0\n\ndef test_large_array_find_last():\n    arr = list(range(1000))\n    assert binary_search(arr, 999) == 999\n\ndef test_large_array_find_middle():\n    arr = list(range(1000))\n    assert binary_search(arr, 499) == 499\n\ndef test_duplicate_elements_find_first_occurrence():\n    assert binary_search([1, 2, 2, 2, 3], 2) in [1, 2, 3]\n\ndef test_all_identical_elements_found():\n    assert binary_search([5, 5, 5, 5], 5) in [0, 1, 2, 3]\n\ndef test_all_identical_elements_not_found():\n    assert binary_search([5, 5, 5, 5], 3) == -1",
+    "condition": "from algorithms.searching.binary_search import binary_search\n\n# condition: low <= high: True, val == query: True \u2192 return mid\ndef test_binary_search_found_middle():\n    # low <= high: True, val == query: True\n    assert binary_search([1, 2, 3, 4, 5], 3) == 2\n\n# condition: low <= high: True, val == query: False, val < query: True \u2192 low = mid + 1\ndef test_binary_search_query_greater():\n    # low <= high: True, val == query: False, val < query: True\n    assert binary_search([1, 2, 3, 4, 5], 4) == 3\n\n# condition: low <= high: True, val == query: False, val < query: False \u2192 high = mid - 1\ndef test_binary_search_query_less():\n    # low <= high: True, val == query: False, val < query: False\n    assert binary_search([1, 2, 3, 4, 5], 2) == 1\n\n# condition: low <= high: False \u2192 return -1\ndef test_binary_search_not_found():\n    # low <= high: False\n    assert binary_search([1, 2, 3, 4, 5], 6) == -1\n\n# condition: low <= high: True, val == query: True (first element)\ndef test_binary_search_found_first():\n    # low <= high: True, val == query: True\n    assert binary_search([1, 2, 3, 4, 5], 1) == 0\n\n# condition: low <= high: True, val == query: True (last element)\ndef test_binary_search_found_last():\n    # low <= high: True, val == query: True\n    assert binary_search([1, 2, 3, 4, 5], 5) == 4\n\n# condition: low <= high: True, val == query: False, val < query: True (multiple steps)\ndef test_binary_search_query_greater_multiple_steps():\n    # low <= high: True, val == query: False, val < query: True (first step)\n    # then low <= high: True, val == query: True (second step)\n    assert binary_search([1, 3, 5, 7, 9], 7) == 3\n\n# condition: low <= high: True, val == query: False, val < query: False (multiple steps)\ndef test_binary_search_query_less_multiple_steps():\n    # low <= high: True, val == query: False, val < query: False (first step)\n    # then low <= high: True, val == query: True (second step)\n    assert binary_search([1, 3, 5, 7, 9], 3) == 1\n\n# condition: empty array, low <= high: False immediately\ndef test_binary_search_empty_array():\n    # low <= high: False\n    assert binary_search([], 1) == -1\n\n# condition: single element, low <= high: True, val == query: True\ndef test_binary_search_single_element_found():\n    # low <= high: True, val == query: True\n    assert binary_search([5], 5) == 0\n\n# condition: single element, low <= high: True, val == query: False, val < query: True\ndef test_binary_search_single_element_query_greater():\n    # low <= high: True, val == query: False, val < query: True\n    # then low <= high: False, return -1\n    assert binary_search([5], 10) == -1\n\n# condition: single element, low <= high: True, val == query: False, val < query: False\ndef test_binary_search_single_element_query_less():\n    # low <= high: True, val == query: False, val < query: False\n    # then low <= high: False, return -1\n    assert binary_search([5], 1) == -1",
+    "ecp": "import pytest\nfrom algorithms.searching.binary_search import binary_search\n\n# Valid equivalence class: query present in array (single element)\ndef test_query_present_single_element():\n    assert binary_search([5], 5) == 0\n\n# Valid equivalence class: query present in array (multiple elements, at start)\ndef test_query_present_at_start():\n    assert binary_search([1, 2, 3, 4, 5], 1) == 0\n\n# Valid equivalence class: query present in array (multiple elements, at end)\ndef test_query_present_at_end():\n    assert binary_search([1, 2, 3, 4, 5], 5) == 4\n\n# Valid equivalence class: query present in array (multiple elements, middle)\ndef test_query_present_middle():\n    assert binary_search([1, 2, 3, 4, 5], 3) == 2\n\n# Valid equivalence class: query not present, less than all elements\ndef test_query_not_present_less_than_all():\n    assert binary_search([10, 20, 30], 5) == -1\n\n# Valid equivalence class: query not present, greater than all elements\ndef test_query_not_present_greater_than_all():\n    assert binary_search([10, 20, 30], 35) == -1\n\n# Valid equivalence class: query not present, between elements\ndef test_query_not_present_between_elements():\n    assert binary_search([10, 20, 30], 25) == -1\n\n# Valid equivalence class: empty array (query never found)\ndef test_empty_array():\n    assert binary_search([], 5) == -1\n\n# Valid equivalence class: duplicate elements, query present\ndef test_duplicate_elements_query_present():\n    # function returns first found index; behavior is acceptable\n    result = binary_search([1, 2, 2, 3], 2)\n    assert result in [1, 2]  # binary search may return either duplicate index\n\n# Invalid equivalence class: array not sorted (ascending order violated)\ndef test_unsorted_array():\n    # function behavior is undefined per spec; we test typical behavior\n    # binary search on unsorted array may produce incorrect result\n    # This is a valid input per type, but violates precondition.\n    # We treat it as a separate class and observe actual output.\n    result = binary_search([5, 2, 8], 8)\n    # Not asserting a specific outcome, just that it runs without error\n    assert result is not None  # could be -1 or an index\n\n# Invalid equivalence class: array contains non-integer elements (type violation)\ndef test_array_non_integer():\n    with pytest.raises(TypeError):\n        binary_search([1, 'a', 3], 2)",
+    "path": "import pytest\nfrom algorithms.searching.binary_search import binary_search\n\n# path: while loop condition false initially (low > high) \u2192 return -1\ndef test_binary_search_empty():\n    assert binary_search([], 5) == -1\n\n# path: while true \u2192 val == query \u2192 return mid (first iteration)\ndef test_binary_search_single_element_found():\n    assert binary_search([5], 5) == 0\n\n# path: while true \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while false \u2192 return -1\ndef test_binary_search_single_element_not_found_greater():\n    assert binary_search([3], 5) == -1\n\n# path: while true \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while false \u2192 return -1\ndef test_binary_search_single_element_not_found_less():\n    assert binary_search([7], 5) == -1\n\n# path: while true \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while true (second iteration) \u2192 val == query \u2192 return mid\ndef test_binary_search_two_elements_found_second():\n    assert binary_search([1, 2], 2) == 1\n\n# path: while true \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while true (second iteration) \u2192 val == query \u2192 return mid\ndef test_binary_search_two_elements_found_first():\n    assert binary_search([1, 2], 1) == 0\n\n# path: while true \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while false \u2192 return -1\ndef test_binary_search_two_elements_not_found_greater():\n    assert binary_search([1, 2], 3) == -1\n\n# path: while true \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while false \u2192 return -1\ndef test_binary_search_two_elements_not_found_less():\n    assert binary_search([1, 2], 0) == -1\n\n# path: while true \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while true (second iteration) \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while false \u2192 return -1\ndef test_binary_search_three_elements_not_found_rightmost():\n    assert binary_search([1, 2, 3], 4) == -1\n\n# path: while true \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while true (second iteration) \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while false \u2192 return -1\ndef test_binary_search_three_elements_not_found_leftmost():\n    assert binary_search([1, 2, 3], 0) == -1\n\n# path: while true \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while true (second iteration) \u2192 val == query \u2192 return mid\ndef test_binary_search_three_elements_found_right():\n    assert binary_search([1, 2, 3], 3) == 2\n\n# path: while true \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while true (second iteration) \u2192 val == query \u2192 return mid\ndef test_binary_search_three_elements_found_left():\n    assert binary_search([1, 2, 3], 1) == 0\n\n# path: while true \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while true (second iteration) \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while true (third iteration) \u2192 val == query \u2192 return mid\ndef test_binary_search_four_elements_found_middle():\n    assert binary_search([1, 2, 3, 4], 3) == 2\n\n# path: while true \u2192 val != query \u2192 val > query \u2192 high = mid-1 \u2192 while true (second iteration) \u2192 val != query \u2192 val < query \u2192 low = mid+1 \u2192 while true (third iteration) \u2192 val == query \u2192 return mid\ndef test_binary_search_four_elements_found_other_middle():\n    assert binary_search([1, 2, 3, 4], 2) == 1\n\n# path: many iterations, query found after multiple low updates\ndef test_binary_search_large_found():\n    arr = list(range(1, 100))\n    assert binary_search(arr, 78) == 77\n\n# path: many iterations, query not found after multiple updates\ndef test_binary_search_large_not_found():\n    arr = list(range(1, 100, 2))  # odd numbers only\n    assert binary_search(arr, 50) == -1"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_empty_array",
+        "test_single_element_found",
+        "test_single_element_not_found",
+        "test_two_elements_find_first",
+        "test_two_elements_find_second",
+        "test_three_elements_find_middle",
+        "test_query_at_lower_bound",
+        "test_query_at_upper_bound",
+        "test_query_just_above_lower_bound",
+        "test_query_just_below_upper_bound",
+        "test_query_below_all_elements",
+        "test_query_above_all_elements",
+        "test_query_between_elements",
+        "test_large_array_find_first",
+        "test_large_array_find_last",
+        "test_large_array_find_middle",
+        "test_duplicate_elements_find_first_occurrence",
+        "test_all_identical_elements_found",
+        "test_all_identical_elements_not_found"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "...................                                                      [100%]\n19 passed in 0.11s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "condition": {
+      "passed": [
+        "test_binary_search_found_middle",
+        "test_binary_search_query_greater",
+        "test_binary_search_query_less",
+        "test_binary_search_not_found",
+        "test_binary_search_found_first",
+        "test_binary_search_found_last",
+        "test_binary_search_query_greater_multiple_steps",
+        "test_binary_search_query_less_multiple_steps",
+        "test_binary_search_empty_array",
+        "test_binary_search_single_element_found",
+        "test_binary_search_single_element_query_greater",
+        "test_binary_search_single_element_query_less"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "............                                                             [100%]\n12 passed in 0.10s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_query_present_single_element",
+        "test_query_present_at_start",
+        "test_query_present_at_end",
+        "test_query_present_middle",
+        "test_query_not_present_less_than_all",
+        "test_query_not_present_greater_than_all",
+        "test_query_not_present_between_elements",
+        "test_empty_array",
+        "test_duplicate_elements_query_present",
+        "test_unsorted_array",
+        "test_array_non_integer"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "...........                                                              [100%]\n11 passed in 0.10s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "path": {
+      "passed": [
+        "test_binary_search_empty",
+        "test_binary_search_single_element_found",
+        "test_binary_search_single_element_not_found_greater",
+        "test_binary_search_single_element_not_found_less",
+        "test_binary_search_two_elements_found_second",
+        "test_binary_search_two_elements_found_first",
+        "test_binary_search_two_elements_not_found_greater",
+        "test_binary_search_two_elements_not_found_less",
+        "test_binary_search_three_elements_not_found_rightmost",
+        "test_binary_search_three_elements_not_found_leftmost",
+        "test_binary_search_three_elements_found_right",
+        "test_binary_search_three_elements_found_left",
+        "test_binary_search_four_elements_found_middle",
+        "test_binary_search_four_elements_found_other_middle",
+        "test_binary_search_large_found",
+        "test_binary_search_large_not_found"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "................                                                         [100%]\n16 passed in 0.10s\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "mutation_score": 0.7692307692307693,
+  "mutant_count": 13,
+  "agent_kills": {
+    "bva": [
+      1,
+      3,
+      4,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "condition": [
+      1,
+      3,
+      4,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "ecp": [
+      1,
+      3,
+      4,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ],
+    "path": [
+      3,
+      4,
+      6,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ]
+  },
+  "survived_mutants": [
+    {
+      "id": 2,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 24"
+    },
+    {
+      "id": 5,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 26"
+    },
+    {
+      "id": 7,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 23"
+    }
+  ],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 19"
+    },
+    {
+      "id": 3,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 17"
+    },
+    {
+      "id": 4,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 19"
+    },
+    {
+      "id": 6,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 19"
+    },
+    {
+      "id": 8,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 18"
+    },
+    {
+      "id": 9,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 21"
+    },
+    {
+      "id": 10,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 18"
+    },
+    {
+      "id": 11,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 21"
+    },
+    {
+      "id": 12,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 23"
+    },
+    {
+      "id": 13,
+      "tag": "sign_flip",
+      "description": "sign_flip at line 27"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1764 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 2034 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 2254 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 3500 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "54 passed, 1 failed, 0 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 1 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "55 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 8,
+      "action": "run_mutation_testing",
+      "outcome": "14/21 killed (66.7%), llm=50.0%, quality=0.41"
+    },
+    {
+      "step": 9,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 100.0%, quality=0.66"
+    },
+    {
+      "step": 10,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1800 chars"
+    },
+    {
+      "step": 11,
+      "action": "run_tests",
+      "outcome": "56 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 12,
+      "action": "run_mutation_testing",
+      "outcome": "15/22 killed (68.2%), llm=55.6%, quality=0.67"
+    },
+    {
+      "step": 13,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 100.0%, quality=0.67"
+    },
+    {
+      "step": 14,
+      "action": "generate_condition_tests",
+      "outcome": "generated 2894 chars"
+    },
+    {
+      "step": 15,
+      "action": "run_tests",
+      "outcome": "59 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 16,
+      "action": "run_mutation_testing",
+      "outcome": "14/21 killed (66.7%), llm=50.0%, quality=0.67"
+    },
+    {
+      "step": 17,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 100.0%, quality=0.67"
+    },
+    {
+      "step": 18,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 2345 chars"
+    },
+    {
+      "step": 19,
+      "action": "run_tests",
+      "outcome": "58 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 20,
+      "action": "run_mutation_testing",
+      "outcome": "10/13 killed (76.9%), quality=0.71"
+    }
+  ],
+  "step_count": 20,
+  "done": false,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 1,
+  "line_coverage": 1.0,
+  "branch_coverage": 1.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.3275862068965517,
+  "test_diversity": 0.26666666666666666,
+  "quality_score": 0.7104,
+  "llm_mutation_score": 0.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.6648,
+    0.6725,
+    0.665
+  ],
+  "grpo_rewards": {
+    "mutation": 0.7692307692307693,
+    "branch_coverage": 1.0,
+    "assertion_density": 0.3220338983050847,
+    "test_diversity": 0.26666666666666666,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 0.0,
+    "quality_score": 0.665
+  }
+}

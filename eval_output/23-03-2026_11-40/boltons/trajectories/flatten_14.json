@@ -1,0 +1,325 @@
+{
+  "function_info": {
+    "name": "flatten",
+    "file_path": "boltons\\iterutils.py",
+    "language": "python"
+  },
+  "index": 14,
+  "generated_tests": {
+    "bva": "import pytest\nfrom boltons.iterutils import split\n\ndef test_split_empty_iterable():\n    assert split([]) == []\n\ndef test_split_single_element_no_sep():\n    assert split(['a']) == [['a']]\n\ndef test_split_all_separators():\n    assert split([None, None, None], sep=None) == []\n\ndef test_split_maxsplit_zero():\n    assert split(['a', None, 'b', None, 'c'], sep=None, maxsplit=0) == [['a', 'b', 'c']]\n\ndef test_split_maxsplit_one():\n    result = split(['a', None, 'b', None, 'c'], sep=None, maxsplit=1)\n    assert result == [['a'], ['b', 'c']]\n\ndef test_split_maxsplit_one_less_than_full():\n    result = split(['a', None, 'b', None, 'c'], sep=None, maxsplit=2)\n    assert result == [['a'], ['b'], ['c']]\n\ndef test_split_maxsplit_equal_to_separators():\n    result = split(['a', None, 'b', None, 'c'], sep=None, maxsplit=3)\n    assert result == [['a'], ['b'], ['c']]\n\ndef test_split_maxsplit_greater_than_separators():\n    result = split(['a', None, 'b', None, 'c'], sep=None, maxsplit=5)\n    assert result == [['a'], ['b'], ['c']]\n\ndef test_split_string_separator():\n    assert split(['a', '|', 'b', '|', 'c'], sep='|') == [['a'], ['b'], ['c']]\n\ndef test_split_no_separator_present():\n    assert split(['a', 'b', 'c'], sep=None) == [['a', 'b', 'c']]\n\ndef test_split_consecutive_separators():\n    assert split(['a', None, None, 'b'], sep=None) == [['a'], ['b']]\n\ndef test_split_separator_at_start():\n    assert split([None, 'a', 'b'], sep=None) == [['a', 'b']]\n\ndef test_split_separator_at_end():\n    assert split(['a', 'b', None], sep=None) == [['a', 'b']]\n\ndef test_split_separator_at_start_and_end():\n    assert split([None, 'a', 'b', None], sep=None) == [['a', 'b']]\n\ndef test_split_maxsplit_with_consecutive_separators():\n    result = split(['a', None, None, 'b', None, 'c'], sep=None, maxsplit=1)\n    assert result == [['a'], ['b', 'c']]\n\ndef test_split_iterable_with_falsey_non_separator():\n    assert split([0, 1, 2, 0], sep=None) == [[0, 1, 2, 0]]\n\ndef test_split_with_custom_separator_falsey():\n    assert split([0, 1, 2, 0], sep=0) == [[1, 2]]",
+    "condition": "import pytest\nfrom boltons.iterutils import split\n\n# condition: sep is None: True, maxsplit is None: True\ndef test_split_sep_none_maxsplit_none():\n    result = split(['hi', 'hello', None, None, 'sup', None, 'soap', None])\n    assert result == [['hi', 'hello'], ['sup'], ['soap']]\n\n# condition: sep is None: False, maxsplit is None: True\ndef test_split_sep_not_none_maxsplit_none():\n    result = split(['a', 'sep', 'b', 'sep', 'c'], sep='sep')\n    assert result == [['a'], ['b'], ['c']]\n\n# condition: sep is None: True, maxsplit is None: False\ndef test_split_sep_none_maxsplit_not_none():\n    result = split(['a', None, 'b', None, 'c'], maxsplit=1)\n    assert result == [['a'], ['b', None, 'c']]\n\n# condition: sep is None: False, maxsplit is None: False\ndef test_split_sep_not_none_maxsplit_not_none():\n    result = split(['a', 'sep', 'b', 'sep', 'c'], sep='sep', maxsplit=1)\n    assert result == [['a'], ['b', 'sep', 'c']]\n\n# condition: src is empty list, sep is None: True, maxsplit is None: True\ndef test_split_empty_src():\n    result = split([])\n    assert result == []\n\n# condition: src with no separator occurrences, sep is None: True, maxsplit is None: True\ndef test_split_no_separator():\n    result = split(['a', 'b', 'c'])\n    assert result == [['a', 'b', 'c']]\n\n# condition: src with no separator occurrences, sep is None: False, maxsplit is None: True\ndef test_split_no_separator_custom_sep():\n    result = split(['a', 'b', 'c'], sep='sep')\n    assert result == [['a', 'b', 'c']]\n\n# condition: maxsplit is None: False, maxsplit=0 (edge case)\ndef test_split_maxsplit_zero():\n    result = split(['a', None, 'b', None, 'c'], maxsplit=0)\n    assert result == [['a', None, 'b', None, 'c']]\n\n# condition: maxsplit is None: False, maxsplit larger than occurrences\ndef test_split_maxsplit_larger_than_occurrences():\n    result = split(['a', None, 'b'], maxsplit=5)\n    assert result == [['a'], ['b']]\n\n# condition: sep is None: False, sep is a callable (not None), maxsplit is None: True\ndef test_split_sep_callable():\n    result = split([1, 2, 0, 3, 4, 0, 5], sep=lambda x: x == 0)\n    assert result == [[1, 2], [3, 4], [5]]\n\n# condition: sep is None: False, sep is a callable, maxsplit is None: False\ndef test_split_sep_callable_maxsplit():\n    result = split([1, 2, 0, 3, 4, 0, 5], sep=lambda x: x == 0, maxsplit=1)\n    assert result == [[1, 2], [3, 4, 0, 5]]",
+    "ecp": "import pytest\nfrom boltons.iterutils import split\n\n# Valid equivalence class: src is empty iterable, sep is None\ndef test_split_empty_src():\n    assert split([]) == []\n\n# Valid equivalence class: src contains no separators (sep is None)\ndef test_split_no_none_separators():\n    assert split(['a', 'b', 'c']) == [['a', 'b', 'c']]\n\n# Valid equivalence class: src contains multiple None separators (sep is None)\ndef test_split_multiple_none_separators():\n    assert split(['hi', None, 'hello', None, None, 'sup']) == [['hi'], ['hello'], ['sup']]\n\n# Valid equivalence class: src starts with separator (sep is None)\ndef test_split_starts_with_separator():\n    assert split([None, 'a', 'b']) == [['a', 'b']]\n\n# Valid equivalence class: src ends with separator (sep is None)\ndef test_split_ends_with_separator():\n    assert split(['a', 'b', None]) == [['a', 'b']]\n\n# Valid equivalence class: custom separator (not None)\ndef test_split_custom_separator():\n    assert split(['a', 'SEP', 'b', 'c', 'SEP', 'd'], sep='SEP') == [['a'], ['b', 'c'], ['d']]\n\n# Valid equivalence class: maxsplit specified (positive integer)\ndef test_split_with_maxsplit():\n    assert split(['a', None, 'b', None, 'c'], maxsplit=1) == [['a'], ['b', None, 'c']]\n\n# Valid equivalence class: maxsplit is zero\ndef test_split_maxsplit_zero():\n    assert split(['a', None, 'b'], maxsplit=0) == [['a', None, 'b']]\n\n# Valid equivalence class: maxsplit larger than number of separators\ndef test_split_maxsplit_exceeds_separators():\n    assert split(['a', None, 'b'], maxsplit=5) == [['a'], ['b']]\n\n# Valid equivalence class: src is tuple (other iterable type)\ndef test_split_src_is_tuple():\n    assert split(('a', None, 'b')) == [['a'], ['b']]\n\n# Invalid equivalence class: maxsplit is negative integer\ndef test_split_maxsplit_negative():\n    with pytest.raises(ValueError):\n        split(['a', 'b'], maxsplit=-1)\n\n# Invalid equivalence class: maxsplit is not an integer\ndef test_split_maxsplit_non_integer():\n    with pytest.raises(TypeError):\n        split(['a', 'b'], maxsplit='invalid')\n\n# Invalid equivalence class: src is not iterable\ndef test_split_src_not_iterable():\n    with pytest.raises(TypeError):\n        split(123)",
+    "path": "import pytest\nfrom boltons.iterutils import split\n\n# path: sep is None, maxsplit is None, src empty\ndef test_split_empty_src():\n    assert split([]) == []\n\n# path: sep is None, maxsplit is None, src non-empty, no None encountered before end\ndef test_split_no_sep_no_none():\n    assert split([1, 2, 3]) == [[1, 2, 3]]\n\n# path: sep is None, maxsplit is None, src non-empty, one None at start\ndef test_split_none_at_start():\n    assert split([None, 1, 2]) == [[1, 2]]\n\n# path: sep is None, maxsplit is None, src non-empty, one None in middle\ndef test_split_one_none_in_middle():\n    assert split([1, None, 2]) == [[1], [2]]\n\n# path: sep is None, maxsplit is None, src non-empty, consecutive Nones\ndef test_split_consecutive_nones():\n    assert split([1, None, None, 2]) == [[1], [2]]\n\n# path: sep is None, maxsplit is None, src non-empty, None at end\ndef test_split_none_at_end():\n    assert split([1, 2, None]) == [[1, 2]]\n\n# path: sep is not None, maxsplit is None, src empty\ndef test_split_custom_sep_empty_src():\n    assert split([], sep=0) == []\n\n# path: sep is not None, maxsplit is None, src non-empty, no sep encountered before end\ndef test_split_custom_sep_no_sep():\n    assert split([1, 2, 3], sep=0) == [[1, 2, 3]]\n\n# path: sep is not None, maxsplit is None, src non-empty, one sep at start\ndef test_split_custom_sep_at_start():\n    assert split([0, 1, 2], sep=0) == [[1, 2]]\n\n# path: sep is not None, maxsplit is None, src non-empty, one sep in middle\ndef test_split_custom_sep_in_middle():\n    assert split([1, 0, 2], sep=0) == [[1], [2]]\n\n# path: sep is not None, maxsplit is None, src non-empty, consecutive seps\ndef test_split_custom_sep_consecutive():\n    assert split([1, 0, 0, 2], sep=0) == [[1], [2]]\n\n# path: sep is not None, maxsplit is None, src non-empty, sep at end\ndef test_split_custom_sep_at_end():\n    assert split([1, 2, 0], sep=0) == [[1, 2]]\n\n# path: sep is None, maxsplit is 0, src non-empty\ndef test_split_maxsplit_zero():\n    assert split([1, None, 2, None, 3], maxsplit=0) == [[1, None, 2, None, 3]]\n\n# path: sep is None, maxsplit is positive, src non-empty, fewer splits than maxsplit\ndef test_split_maxsplit_positive_fewer_splits():\n    assert split([1, None, 2, None, 3], maxsplit=3) == [[1], [2], [3]]\n\n# path: sep is None, maxsplit is positive, src non-empty, exactly maxsplit splits\ndef test_split_maxsplit_positive_exact():\n    assert split([1, None, 2, None, 3], maxsplit=2) == [[1], [2], [3]]\n\n# path: sep is None, maxsplit is positive, src non-empty, more splits possible than maxsplit\ndef test_split_maxsplit_positive_limited():\n    assert split([1, None, 2, None, 3, None, 4], maxsplit=2) == [[1], [2], [3, None, 4]]\n\n# path: sep is not None, maxsplit is positive, src non-empty, more splits possible than maxsplit\ndef test_split_custom_sep_maxsplit_positive_limited():\n    assert split([1, 0, 2, 0, 3, 0, 4], sep=0, maxsplit=2) == [[1], [2], [3, 0, 4]]\n\n# path: sep is not None, maxsplit is positive, src non-empty, exactly maxsplit splits\ndef test_split_custom_sep_maxsplit_positive_exact():\n    assert split([1, 0, 2, 0, 3], sep=0, maxsplit=2) == [[1], [2], [3]]\n\n# path: sep is not None, maxsplit is positive, src non-empty, fewer splits than maxsplit\ndef test_split_custom_sep_maxsplit_positive_fewer():\n    assert split([1, 0, 2], sep=0, maxsplit=3) == [[1], [2]]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_split_empty_iterable",
+        "test_split_single_element_no_sep",
+        "test_split_all_separators",
+        "test_split_maxsplit_one_less_than_full",
+        "test_split_maxsplit_equal_to_separators",
+        "test_split_maxsplit_greater_than_separators",
+        "test_split_string_separator",
+        "test_split_no_separator_present",
+        "test_split_consecutive_separators",
+        "test_split_separator_at_start",
+        "test_split_separator_at_end",
+        "test_split_separator_at_start_and_end",
+        "test_split_iterable_with_falsey_non_separator"
+      ],
+      "failed": [
+        "test_split_maxsplit_zero",
+        "test_split_maxsplit_one",
+        "test_split_maxsplit_with_consecutive_separators",
+        "test_split_with_custom_separator_falsey"
+      ],
+      "errors": [],
+      "stdout": "...FF.........F.F                                                        [100%]\n================================== FAILURES ===================================\n__________________________ test_split_maxsplit_zero ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_bva.py:14: in test_split_maxsplit_zero\n    assert split(['a', None, 'b', None, 'c'], sep=None, maxsplit=0) == [['a', 'b', 'c']]\nE   AssertionError: assert [[['a', None,..., None, 'c']]] == [['a', 'b', 'c']]\nE     \nE     At index 0 diff: [['a', None, 'b', None, 'c']] != ['a', 'b', 'c']\nE     Use -v to get more diff\n___________________________ test_split_maxsplit_one ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_bva.py:18: in test_split_maxsplit_one\n    assert result == [['a'], ['b', 'c']]\nE   AssertionError: assert [['a'], ['b', None, 'c']] == [['a'], ['b', 'c']]\nE     \nE     At index 1 diff: ['b', None, 'c'] != ['b', 'c']\nE     Use -v to get more diff\n_______________ test_split_maxsplit_with_consecutive_separators _______________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_bva.py:52: in test_split_maxsplit_with_consecutive_separators\n    assert result == [['a'], ['b', 'c']]\nE   AssertionError: assert [['a'], [None...', None, 'c']] == [['a'], ['b', 'c']]\nE     \nE     At index 1 diff: [None, 'b', None, 'c'] != ['b', 'c']\nE     Use -v to get more diff\n___________________ test_split_with_custom_separator_falsey ___________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_bva.py:58: in test_split_with_custom_separator_falsey\n    assert split([0, 1, 2, 0], sep=0) == [[1, 2]]\nE   assert [[], [1, 2], []] == [[1, 2]]\nE     \nE     At index 0 diff: [] != [1, 2]\nE     Left contains 2 more items, first extra item: [1, 2]\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_bva.py::test_split_maxsplit_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_bva.py::test_split_maxsplit_one\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_bva.py::test_split_maxsplit_with_consecutive_separators\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_bva.py::test_split_with_custom_separator_falsey\n4 failed, 13 passed in 0.52s\n",
+      "stderr": "",
+      "returncode": 1
+    },
+    "condition": {
+      "passed": [
+        "test_split_sep_none_maxsplit_none",
+        "test_split_sep_not_none_maxsplit_none",
+        "test_split_sep_none_maxsplit_not_none",
+        "test_split_sep_not_none_maxsplit_not_none",
+        "test_split_empty_src",
+        "test_split_no_separator",
+        "test_split_no_separator_custom_sep",
+        "test_split_maxsplit_larger_than_occurrences",
+        "test_split_sep_callable",
+        "test_split_sep_callable_maxsplit"
+      ],
+      "failed": [
+        "test_split_maxsplit_zero"
+      ],
+      "errors": [],
+      "stdout": ".......F...                                                              [100%]\n================================== FAILURES ===================================\n__________________________ test_split_maxsplit_zero ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_condition.py:42: in test_split_maxsplit_zero\n    assert result == [['a', None, 'b', None, 'c']]\nE   AssertionError: assert [[['a', None,..., None, 'c']]] == [['a', None, 'b', None, 'c']]\nE     \nE     At index 0 diff: [['a', None, 'b', None, 'c']] != ['a', None, 'b', None, 'c']\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_condition.py::test_split_maxsplit_zero\n1 failed, 10 passed in 0.45s\n",
+      "stderr": "",
+      "returncode": 1
+    },
+    "ecp": {
+      "passed": [
+        "test_split_empty_src_sep_none",
+        "test_split_no_separators_sep_none",
+        "test_split_multiple_separators_sep_none",
+        "test_split_starts_with_separator_sep_none",
+        "test_split_ends_with_separator_sep_none",
+        "test_split_consecutive_separators_sep_none",
+        "test_split_custom_separator",
+        "test_split_with_maxsplit_less_than_separators",
+        "test_split_with_maxsplit_equals_separators",
+        "test_split_with_maxsplit_greater_than_separators",
+        "test_split_src_is_tuple",
+        "test_split_src_not_iterable"
+      ],
+      "failed": [
+        "test_split_with_maxsplit_zero",
+        "test_split_maxsplit_negative"
+      ],
+      "errors": [],
+      "stdout": "........F...F.                                                           [100%]\n================================== FAILURES ===================================\n________________________ test_split_with_maxsplit_zero ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_ecp.py:38: in test_split_with_maxsplit_zero\n    assert split(['a', None, 'b'], maxsplit=0) == [['a', None, 'b']]\nE   AssertionError: assert [[['a', None, 'b']]] == [['a', None, 'b']]\nE     \nE     At index 0 diff: [['a', None, 'b']] != ['a', None, 'b']\nE     Use -v to get more diff\n________________________ test_split_maxsplit_negative _________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_ecp.py:54: in test_split_maxsplit_negative\n    with pytest.raises(ValueError):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE <class 'ValueError'>\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_ecp.py::test_split_with_maxsplit_zero\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_ecp.py::test_split_maxsplit_negative\n2 failed, 12 passed in 0.45s\n",
+      "stderr": "",
+      "returncode": 1
+    },
+    "path": {
+      "passed": [
+        "test_split_empty_src",
+        "test_split_no_sep_no_none",
+        "test_split_none_at_start",
+        "test_split_one_none_in_middle",
+        "test_split_consecutive_nones",
+        "test_split_none_at_end",
+        "test_split_custom_sep_no_sep",
+        "test_split_custom_sep_in_middle",
+        "test_split_maxsplit_positive_fewer_splits",
+        "test_split_maxsplit_positive_exact",
+        "test_split_maxsplit_positive_limited",
+        "test_split_custom_sep_maxsplit_positive_limited",
+        "test_split_custom_sep_maxsplit_positive_exact",
+        "test_split_custom_sep_maxsplit_positive_fewer"
+      ],
+      "failed": [
+        "test_split_custom_sep_empty_src",
+        "test_split_custom_sep_at_start",
+        "test_split_custom_sep_consecutive",
+        "test_split_custom_sep_at_end",
+        "test_split_maxsplit_zero"
+      ],
+      "errors": [],
+      "stdout": "......F.F.FFF......                                                      [100%]\n================================== FAILURES ===================================\n_______________________ test_split_custom_sep_empty_src _______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_path.py:30: in test_split_custom_sep_empty_src\n    assert split([], sep=0) == []\nE   assert [[]] == []\nE     \nE     Left contains one more item: []\nE     Use -v to get more diff\n_______________________ test_split_custom_sep_at_start ________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_path.py:38: in test_split_custom_sep_at_start\n    assert split([0, 1, 2], sep=0) == [[1, 2]]\nE   assert [[], [1, 2]] == [[1, 2]]\nE     \nE     At index 0 diff: [] != [1, 2]\nE     Left contains one more item: [1, 2]\nE     Use -v to get more diff\n______________________ test_split_custom_sep_consecutive ______________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_path.py:46: in test_split_custom_sep_consecutive\n    assert split([1, 0, 0, 2], sep=0) == [[1], [2]]\nE   assert [[1], [], [2]] == [[1], [2]]\nE     \nE     At index 1 diff: [] != [2]\nE     Left contains one more item: [2]\nE     Use -v to get more diff\n________________________ test_split_custom_sep_at_end _________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_path.py:50: in test_split_custom_sep_at_end\n    assert split([1, 2, 0], sep=0) == [[1, 2]]\nE   assert [[1, 2], []] == [[1, 2]]\nE     \nE     Left contains one more item: []\nE     Use -v to get more diff\n__________________________ test_split_maxsplit_zero ___________________________\neval_output\\23-03-2026_11-40\\boltons\\test_cases\\flatten_14\\test_path.py:54: in test_split_maxsplit_zero\n    assert split([1, None, 2, None, 3], maxsplit=0) == [[1, None, 2, None, 3]]\nE   assert [[[1, None, 2, None, 3]]] == [[1, None, 2, None, 3]]\nE     \nE     At index 0 diff: [[1, None, 2, None, 3]] != [1, None, 2, None, 3]\nE     Use -v to get more diff\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_path.py::test_split_custom_sep_empty_src\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_path.py::test_split_custom_sep_at_start\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_path.py::test_split_custom_sep_consecutive\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_path.py::test_split_custom_sep_at_end\nFAILED eval_output/23-03-2026_11-40/boltons/test_cases/flatten_14/test_path.py::test_split_maxsplit_zero\n5 failed, 14 passed in 0.51s\n",
+      "stderr": "",
+      "returncode": 1
+    }
+  },
+  "mutation_score": 1.0,
+  "mutant_count": 6,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "condition": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6
+    ]
+  },
+  "survived_mutants": [],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "llm_mutant",
+      "description": "Missing edge case: maxsplit not passed to split_iter when it is None, causing potential TypeError"
+    },
+    {
+      "id": 2,
+      "tag": "llm_mutant",
+      "description": "Wrong variable: passes 'src' as the second argument (sep) and 'sep' as the first argument to split_iter"
+    },
+    {
+      "id": 3,
+      "tag": "llm_mutant",
+      "description": "Logic inversion: returns an empty list unconditionally, skipping the actual split logic"
+    },
+    {
+      "id": 4,
+      "tag": "llm_mutant",
+      "description": "Incorrect default: changes default maxsplit from None to 0, limiting splits even when not intended"
+    },
+    {
+      "id": 5,
+      "tag": "llm_mutant",
+      "description": "Wrong comparison: checks if maxsplit is not None but uses '>' instead of '>=' for a boundary condition (simulated by adding a faulty guard)"
+    },
+    {
+      "id": 6,
+      "tag": "llm_mutant",
+      "description": "Swapped arguments: passes arguments in wrong order to list() constructor (though list() takes only one, this simulates a mistake by wrapping split_iter result incorrectly)"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 2032 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 935 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 2373 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 3314 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "46 passed, 9 failed, 0 errors"
+    },
+    {
+      "step": 6,
+      "action": "fix_tests",
+      "outcome": "fixed 4 test types"
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "47 passed, 8 failed, 0 errors"
+    },
+    {
+      "step": 8,
+      "action": "fix_tests",
+      "outcome": "fixed 3 test types"
+    },
+    {
+      "step": 9,
+      "action": "run_tests",
+      "outcome": "30 passed, 7 failed, 1 errors"
+    },
+    {
+      "step": 10,
+      "action": "run_mutation_testing",
+      "outcome": "6/6 killed (100.0%), llm=100.0%, quality=0.55"
+    },
+    {
+      "step": 11,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.55"
+    },
+    {
+      "step": 12,
+      "action": "generate_bva_tests",
+      "outcome": "generated 2047 chars"
+    },
+    {
+      "step": 13,
+      "action": "run_tests",
+      "outcome": "43 passed, 11 failed, 0 errors"
+    },
+    {
+      "step": 14,
+      "action": "run_mutation_testing",
+      "outcome": "5/5 killed (100.0%), llm=100.0%, quality=0.55"
+    },
+    {
+      "step": 15,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.55"
+    },
+    {
+      "step": 16,
+      "action": "generate_condition_tests",
+      "outcome": "generated 2364 chars"
+    },
+    {
+      "step": 17,
+      "action": "run_tests",
+      "outcome": "49 passed, 12 failed, 0 errors"
+    },
+    {
+      "step": 18,
+      "action": "run_mutation_testing",
+      "outcome": "6/6 killed (100.0%), llm=100.0%, quality=0.56"
+    },
+    {
+      "step": 19,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 0.0%, quality=0.56"
+    },
+    {
+      "step": 20,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 2186 chars"
+    }
+  ],
+  "step_count": 20,
+  "done": false,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 2,
+  "line_coverage": 1.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.3224043715846994,
+  "test_diversity": 0.06666666666666667,
+  "quality_score": 0.555,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.5548,
+    0.5548,
+    0.555
+  ],
+  "grpo_rewards": {
+    "mutation": 1.0,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.3224043715846994,
+    "test_diversity": 0.06666666666666667,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.555
+  }
+}

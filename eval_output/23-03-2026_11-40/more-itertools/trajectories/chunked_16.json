@@ -1,0 +1,325 @@
+{
+  "function_info": {
+    "name": "chunked",
+    "file_path": "more_itertools\\more.py",
+    "language": "python"
+  },
+  "index": 16,
+  "generated_tests": {
+    "bva": "import pytest\nfrom more_itertools.more import divide\n\ndef test_divide_n_at_lower_bound():\n    with pytest.raises(ValueError):\n        divide(0, [1, 2, 3])\n\ndef test_divide_n_at_min_valid():\n    result = divide(1, [1, 2, 3])\n    assert len(result) == 1\n    assert list(result[0]) == [1, 2, 3]\n\ndef test_divide_n_just_above_min():\n    result = divide(2, [1, 2, 3])\n    assert len(result) == 2\n    assert list(result[0]) == [1, 2]\n    assert list(result[1]) == [3]\n\ndef test_divide_iterable_empty():\n    result = divide(3, [])\n    assert len(result) == 3\n    for chunk in result:\n        assert list(chunk) == []\n\ndef test_divide_iterable_single_element():\n    result = divide(3, [42])\n    assert len(result) == 3\n    assert list(result[0]) == [42]\n    for chunk in result[1:]:\n        assert list(chunk) == []\n\ndef test_divide_iterable_length_equals_n():\n    result = divide(3, [1, 2, 3])\n    assert len(result) == 3\n    assert list(result[0]) == [1]\n    assert list(result[1]) == [2]\n    assert list(result[2]) == [3]\n\ndef test_divide_iterable_length_one_less_than_n():\n    result = divide(4, [1, 2, 3])\n    assert len(result) == 4\n    assert list(result[0]) == [1]\n    assert list(result[1]) == [2]\n    assert list(result[2]) == [3]\n    assert list(result[3]) == []\n\ndef test_divide_iterable_length_one_more_than_n():\n    result = divide(3, [1, 2, 3, 4])\n    assert len(result) == 3\n    assert list(result[0]) == [1, 2]\n    assert list(result[1]) == [3]\n    assert list(result[2]) == [4]\n\ndef test_divide_evenly_divisible():\n    result = divide(2, [1, 2, 3, 4])\n    assert len(result) == 2\n    assert list(result[0]) == [1, 2]\n    assert list(result[1]) == [3, 4]\n\ndef test_divide_with_remainder():\n    result = divide(3, [1, 2, 3, 4, 5])\n    assert len(result) == 3\n    assert list(result[0]) == [1, 2]\n    assert list(result[1]) == [3, 4]\n    assert list(result[2]) == [5]\n\ndef test_divide_n_larger_than_iterable():\n    result = divide(5, [1, 2])\n    assert len(result) == 5\n    assert list(result[0]) == [1]\n    assert list(result[1]) == [2]\n    for chunk in result[2:]:\n        assert list(chunk) == []\n\ndef test_divide_n_much_larger_than_iterable():\n    result = divide(10, [1])\n    assert len(result) == 10\n    assert list(result[0]) == [1]\n    for chunk in result[1:]:\n        assert list(chunk) == []\n\ndef test_divide_with_string_iterable():\n    result = divide(3, \"abcdef\")\n    assert len(result) == 3\n    assert list(result[0]) == ['a', 'b']\n    assert list(result[1]) == ['c', 'd']\n    assert list(result[2]) == ['e', 'f']\n\ndef test_divide_with_tuple_iterable():\n    result = divide(2, (1, 2, 3, 4))\n    assert len(result) == 2\n    assert list(result[0]) == [1, 2]\n    assert list(result[1]) == [3, 4]\n\ndef test_divide_with_generator():\n    gen = (x for x in range(5))\n    result = divide(2, gen)\n    assert len(result) == 2\n    assert list(result[0]) == [0, 1, 2]\n    assert list(result[1]) == [3, 4]",
+    "condition": "from more_itertools.more import divide\n\n# condition: n < 1: False (n >= 1)\ndef test_divide_n_positive():\n    # n >= 1: False, iterable length divisible by n\n    g1, g2 = divide(2, [1, 2, 3, 4])\n    assert list(g1) == [1, 2]\n    assert list(g2) == [3, 4]\n\n# condition: n < 1: True (n < 1)\ndef test_divide_n_zero_raises():\n    # n < 1: True\n    try:\n        divide(0, [1, 2, 3])\n    except ValueError as e:\n        assert str(e) == 'n must be at least 1'\n\n# condition: iterable[:0] raises TypeError: True\ndef test_divide_iterable_not_sliceable():\n    # iterable[:0] raises TypeError: True\n    def gen():\n        yield from [1, 2, 3, 4]\n    g1, g2 = divide(2, gen())\n    assert list(g1) == [1, 2]\n    assert list(g2) == [3, 4]\n\n# condition: iterable[:0] raises TypeError: False\ndef test_divide_iterable_sliceable():\n    # iterable[:0] raises TypeError: False\n    g1, g2 = divide(2, [1, 2, 3, 4])\n    assert list(g1) == [1, 2]\n    assert list(g2) == [3, 4]\n\n# condition: i <= r: True (i <= remainder)\ndef test_divide_with_remainder_first_chunk():\n    # i <= r: True for i=1, r=1\n    children = divide(3, [1, 2, 3, 4, 5])\n    lists = [list(c) for c in children]\n    assert lists == [[1, 2], [3, 4], [5]]\n\n# condition: i <= r: False (i > remainder)\ndef test_divide_with_remainder_later_chunk():\n    # i <= r: False for i=3, r=1\n    children = divide(3, [1, 2, 3, 4, 5])\n    lists = [list(c) for c in children]\n    assert lists[2] == [5]\n\n# condition: iterable length < n: True\ndef test_divide_iterable_shorter_than_n():\n    # iterable length < n: True\n    children = divide(5, [1, 2, 3])\n    lists = [list(c) for c in children]\n    assert lists == [[1], [2], [3], [], []]\n\n# condition: iterable length < n: False\ndef test_divide_iterable_longer_than_n():\n    # iterable length < n: False\n    children = divide(2, [1, 2, 3, 4])\n    lists = [list(c) for c in children]\n    assert lists == [[1, 2], [3, 4]]\n\n# condition: remainder == 0: True (divisible)\ndef test_divide_evenly_divisible():\n    # remainder == 0: True\n    children = divide(2, [1, 2, 3, 4])\n    lists = [list(c) for c in children]\n    assert lists == [[1, 2], [3, 4]]\n\n# condition: remainder == 0: False (not divisible)\ndef test_divide_not_evenly_divisible():\n    # remainder == 0: False\n    children = divide(3, [1, 2, 3, 4, 5])\n    lists = [list(c) for c in children]\n    assert lists == [[1, 2], [3, 4], [5]]",
+    "ecp": "import pytest\nfrom more_itertools.more import divide\n\n# Valid equivalence class: n = 1 (minimum valid)\ndef test_divide_n_1():\n    g1, = divide(1, [1, 2, 3])\n    assert list(g1) == [1, 2, 3]\n\n# Valid equivalence class: n > 1, length divisible by n\ndef test_divide_n_greater_1_length_divisible():\n    g1, g2 = divide(2, [1, 2, 3, 4])\n    assert list(g1) == [1, 2]\n    assert list(g2) == [3, 4]\n\n# Valid equivalence class: n > 1, length not divisible by n\ndef test_divide_n_greater_1_length_not_divisible():\n    g1, g2, g3 = divide(3, [1, 2, 3, 4, 5])\n    assert list(g1) == [1, 2]\n    assert list(g2) == [3, 4]\n    assert list(g3) == [5]\n\n# Valid equivalence class: length smaller than n\ndef test_divide_length_smaller_than_n():\n    g1, g2, g3, g4 = divide(4, [1, 2])\n    assert list(g1) == [1]\n    assert list(g2) == [2]\n    assert list(g3) == []\n    assert list(g4) == []\n\n# Valid equivalence class: empty iterable\ndef test_divide_empty_iterable():\n    g1, g2 = divide(2, [])\n    assert list(g1) == []\n    assert list(g2) == []\n\n# Valid equivalence class: iterable is a tuple (supports slicing)\ndef test_divide_iterable_tuple():\n    g1, g2 = divide(2, (1, 2, 3, 4))\n    assert list(g1) == [1, 2]\n    assert list(g2) == [3, 4]\n\n# Valid equivalence class: iterable is a string (supports slicing)\ndef test_divide_iterable_string():\n    g1, g2 = divide(2, \"abcd\")\n    assert list(g1) == ['a', 'b']\n    assert list(g2) == ['c', 'd']\n\n# Valid equivalence class: iterable is a generator (does not support slicing)\ndef test_divide_iterable_generator():\n    gen = (x for x in range(6))\n    g1, g2, g3 = divide(3, gen)\n    assert list(g1) == [0, 1]\n    assert list(g2) == [2, 3]\n    assert list(g3) == [4, 5]\n\n# Invalid equivalence class: n = 0\ndef test_divide_n_zero():\n    with pytest.raises(ValueError):\n        divide(0, [1, 2, 3])\n\n# Invalid equivalence class: n negative\ndef test_divide_n_negative():\n    with pytest.raises(ValueError):\n        divide(-1, [1, 2, 3])",
+    "path": "import pytest\nfrom more_itertools.more import divide\n\n# path: n < 1 \u2192 True \u2192 raises ValueError\ndef test_divide_n_zero():\n    with pytest.raises(ValueError):\n        divide(0, [1, 2, 3])\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] raises TypeError \u2192 seq = tuple(iterable) \u2192 r > 0 \u2192 for loop with i <= r and i > r\ndef test_divide_sequence_not_sliceable_uneven():\n    # use a generator as iterable (not sliceable)\n    gen = (x for x in [1, 2, 3, 4, 5])\n    result = divide(2, gen)\n    assert [list(r) for r in result] == [[1, 2, 3], [4, 5]]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] does NOT raise TypeError \u2192 seq = iterable \u2192 r == 0 \u2192 for loop with all i > r\ndef test_divide_sliceable_even():\n    result = divide(2, [1, 2, 3, 4])\n    assert [list(r) for r in result] == [[1, 2], [3, 4]]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] does NOT raise TypeError \u2192 seq = iterable \u2192 r > 0 \u2192 for loop with i <= r and i > r\ndef test_divide_sliceable_uneven():\n    result = divide(3, [1, 2, 3, 4, 5, 6, 7])\n    assert [list(r) for r in result] == [[1, 2, 3], [4, 5], [6, 7]]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] does NOT raise TypeError \u2192 seq = iterable \u2192 len(seq) < n \u2192 r = len(seq) (since divmod(len, n) gives q=0, r=len) \u2192 for loop with i <= r and i > r\ndef test_divide_length_smaller_than_n():\n    result = divide(5, [1, 2, 3])\n    assert [list(r) for r in result] == [[1], [2], [3], [], []]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] does NOT raise TypeError \u2192 seq = iterable \u2192 len(seq) == n \u2192 r = 0 \u2192 for loop with all i > r (each gets q=1)\ndef test_divide_length_equals_n():\n    result = divide(3, [1, 2, 3])\n    assert [list(r) for r in result] == [[1], [2], [3]]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] does NOT raise TypeError \u2192 seq = iterable \u2192 len(seq) == 0 \u2192 r = 0 \u2192 for loop with all i > r (each gets q=0)\ndef test_divide_empty_iterable():\n    result = divide(3, [])\n    assert [list(r) for r in result] == [[], [], []]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] raises TypeError \u2192 seq = tuple(iterable) \u2192 r == 0 \u2192 for loop with all i > r\ndef test_divide_sequence_not_sliceable_even():\n    gen = (x for x in [1, 2, 3, 4])\n    result = divide(2, gen)\n    assert [list(r) for r in result] == [[1, 2], [3, 4]]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] raises TypeError \u2192 seq = tuple(iterable) \u2192 len(seq) < n \u2192 r = len(seq) \u2192 for loop with i <= r and i > r\ndef test_divide_sequence_not_sliceable_smaller_than_n():\n    gen = (x for x in [1, 2])\n    result = divide(4, gen)\n    assert [list(r) for r in result] == [[1], [2], [], []]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] raises TypeError \u2192 seq = tuple(iterable) \u2192 len(seq) == n \u2192 r = 0 \u2192 for loop with all i > r\ndef test_divide_sequence_not_sliceable_length_equals_n():\n    gen = (x for x in [1, 2, 3])\n    result = divide(3, gen)\n    assert [list(r) for r in result] == [[1], [2], [3]]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] raises TypeError \u2192 seq = tuple(iterable) \u2192 len(seq) == 0 \u2192 r = 0 \u2192 for loop with all i > r\ndef test_divide_sequence_not_sliceable_empty():\n    gen = (x for x in [])\n    result = divide(3, gen)\n    assert [list(r) for r in result] == [[], [], []]\n\n# path: n < 1 \u2192 False \u2192 iterable[:0] does NOT raise TypeError \u2192 seq = iterable \u2192 r > 0 \u2192 for loop with i <= r (first r iterations) and i > r (remaining)\n# This path is covered by test_divide_sliceable_uneven, but we add a specific test for n=1 (r=1, q=0)\ndef test_divide_n_1_with_remainder():\n    result = divide(1, [1, 2, 3])\n    assert [list(r) for r in result] == [[1, 2, 3]]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [
+        "test_divide_n_at_lower_bound",
+        "test_divide_n_at_min_valid",
+        "test_divide_n_just_above_min",
+        "test_divide_iterable_empty",
+        "test_divide_iterable_single_element",
+        "test_divide_iterable_length_equals_n",
+        "test_divide_iterable_length_one_less_than_n",
+        "test_divide_iterable_length_one_more_than_n",
+        "test_divide_evenly_divisible",
+        "test_divide_with_remainder",
+        "test_divide_n_larger_than_iterable",
+        "test_divide_n_much_larger_than_iterable",
+        "test_divide_with_string_iterable",
+        "test_divide_with_tuple_iterable",
+        "test_divide_with_generator"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "...............                                                          [100%]\n15 passed in 0.13s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "condition": {
+      "passed": [
+        "test_divide_n_positive",
+        "test_divide_n_zero_raises",
+        "test_divide_iterable_not_sliceable",
+        "test_divide_iterable_sliceable",
+        "test_divide_with_remainder_first_chunk",
+        "test_divide_with_remainder_later_chunk",
+        "test_divide_iterable_shorter_than_n",
+        "test_divide_iterable_longer_than_n",
+        "test_divide_evenly_divisible",
+        "test_divide_not_evenly_divisible"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "..........                                                               [100%]\n10 passed in 0.06s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_divide_n_1",
+        "test_divide_n_greater_1_length_divisible",
+        "test_divide_n_greater_1_length_not_divisible",
+        "test_divide_length_smaller_than_n",
+        "test_divide_empty_iterable",
+        "test_divide_iterable_tuple",
+        "test_divide_iterable_string",
+        "test_divide_iterable_generator",
+        "test_divide_n_zero",
+        "test_divide_n_negative"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "..........                                                               [100%]\n10 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "path": {
+      "passed": [
+        "test_divide_n_zero",
+        "test_divide_sequence_not_sliceable_uneven",
+        "test_divide_sliceable_even",
+        "test_divide_sliceable_uneven",
+        "test_divide_length_smaller_than_n",
+        "test_divide_length_equals_n",
+        "test_divide_empty_iterable",
+        "test_divide_sequence_not_sliceable_even",
+        "test_divide_sequence_not_sliceable_smaller_than_n",
+        "test_divide_sequence_not_sliceable_length_equals_n",
+        "test_divide_sequence_not_sliceable_empty",
+        "test_divide_n_1_with_remainder"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "............                                                             [100%]\n12 passed in 0.07s\n",
+      "stderr": "",
+      "returncode": 0
+    }
+  },
+  "mutation_score": 1.0,
+  "mutant_count": 15,
+  "agent_kills": {
+    "bva": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "condition": [
+      1,
+      2,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "ecp": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
+    "path": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ]
+  },
+  "survived_mutants": [],
+  "killed_mutants": [
+    {
+      "id": 1,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 44"
+    },
+    {
+      "id": 2,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 46"
+    },
+    {
+      "id": 3,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 30"
+    },
+    {
+      "id": 4,
+      "tag": "cmp_swap",
+      "description": "cmp_swap at line 46"
+    },
+    {
+      "id": 5,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 30"
+    },
+    {
+      "id": 6,
+      "tag": "cond_neg",
+      "description": "cond_neg at line 46"
+    },
+    {
+      "id": 7,
+      "tag": "zero_iter",
+      "description": "zero_iter at line 44"
+    },
+    {
+      "id": 8,
+      "tag": "llm_mutant",
+      "description": "off-by-one in loop range: uses range(1, n) instead of range(1, n+1), missing the last chunk"
+    },
+    {
+      "id": 9,
+      "tag": "llm_mutant",
+      "description": "wrong variable in slice: uses seq[start:start] instead of seq[start:stop], resulting in empty slices"
+    },
+    {
+      "id": 10,
+      "tag": "llm_mutant",
+      "description": "swapped arguments in divmod: uses divmod(n, len(seq)) instead of divmod(len(seq), n), causing incorrect q and r"
+    },
+    {
+      "id": 11,
+      "tag": "llm_mutant",
+      "description": "wrong comparison in condition: uses i < r instead of i <= r, causing off-by-one in remainder distribution"
+    },
+    {
+      "id": 12,
+      "tag": "llm_mutant",
+      "description": "missing edge case: removed the check for n < 1, allowing invalid input"
+    },
+    {
+      "id": 13,
+      "tag": "llm_mutant",
+      "description": "off-by-sign in stop calculation: uses stop -= q + 1 instead of stop += q + 1, causing negative indices"
+    },
+    {
+      "id": 14,
+      "tag": "llm_mutant",
+      "description": "wrong default for stop initialization: stop = 1 instead of stop = 0, causing off-by-one in first slice"
+    },
+    {
+      "id": 15,
+      "tag": "llm_mutant",
+      "description": "logic inversion: condition i > r instead of i <= r, causing remainder to be added to wrong chunks"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 2912 chars"
+    },
+    {
+      "step": 2,
+      "action": "generate_condition_tests",
+      "outcome": "generated 2367 chars"
+    },
+    {
+      "step": 3,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1962 chars"
+    },
+    {
+      "step": 4,
+      "action": "generate_path_tests",
+      "outcome": "generated 3464 chars"
+    },
+    {
+      "step": 5,
+      "action": "run_tests",
+      "outcome": "47 passed, 0 failed, 0 errors"
+    },
+    {
+      "step": 6,
+      "action": "run_mutation_testing",
+      "outcome": "15/15 killed (100.0%), llm=100.0%, quality=0.63"
+    },
+    {
+      "step": 7,
+      "action": "run_coverage",
+      "outcome": "line: 100.0%, branch: 100.0%, quality=0.88"
+    },
+    {
+      "step": 8,
+      "action": "stop",
+      "outcome": "stopped"
+    }
+  ],
+  "step_count": 8,
+  "done": true,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 0,
+  "line_coverage": 1.0,
+  "branch_coverage": 1.0,
+  "unique_kills": {
+    "bva": 0,
+    "condition": 0,
+    "ecp": 0,
+    "path": 0
+  },
+  "assertion_density": 0.6382978723404256,
+  "test_diversity": 0.3333333333333333,
+  "quality_score": 0.8791,
+  "llm_mutation_score": 1.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [
+    0.8791
+  ],
+  "grpo_rewards": {
+    "mutation": 1.0,
+    "branch_coverage": 1.0,
+    "assertion_density": 0.6382978723404256,
+    "test_diversity": 0.3333333333333333,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 1.0,
+    "quality_score": 0.8791
+  }
+}

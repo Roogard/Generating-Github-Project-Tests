@@ -13,7 +13,7 @@ The new architecture is a **stateful agent harness**. Instead of a single pass, 
 
 Existing modules (`call_agent`, `run_all_agents`, `run_single_test`, `write_tests`) become **action handlers** inside the step function. Nothing gets rewritten — just wrapped.
 
-Test agents are auto-discovered from `src/prompts/` (excluding `refine.md`, `fix.md`, `mutate.md`). Default set: **bva**, **ecp**, **path**, **condition**. Drop a new `.md` prompt file to add an agent — no code changes needed. Can also be overridden via `ghtest.toml` or the `test_types` config key.
+Test agents are auto-discovered from `src/prompts/` (excluding `refine.md`, `fix.md`, `mutate.md`, `coverage.md`). Default set: **bva**, **ecp**, **path**, **condition**. Drop a new `.md` prompt file to add an agent — no code changes needed. Can also be overridden via `ghtest.toml` or the `test_types` config key.
 
 ## 2. State Definition
 
@@ -28,6 +28,8 @@ state = {
         "language": str,
         "file_path": str,
         "imports": str,
+        "start_line": int,          # 1-indexed first line of function in source file
+        "end_line": int,            # 1-indexed last line of function in source file
     },
     "index": int,                   # function index in the batch
     "output_dir": str,              # base output directory
@@ -49,12 +51,28 @@ state = {
 
     # quality signals
     "fix_attempts": 0,              # how many times fix_tests has run (max 2)
-    "line_coverage": 0.0,           # 0.0–1.0, from pytest-cov
-    "branch_coverage": 0.0,         # 0.0–1.0, from pytest-cov
+    "line_coverage": 0.0,           # 0.0–1.0, from pytest-cov (function-scoped)
+    "branch_coverage": 0.0,         # 0.0–1.0, from pytest-cov (function-scoped)
     "assertion_density": 0.0,       # normalized assert count per test fn (0.0–1.0)
     "test_diversity": 0.0,          # fraction of mutation tag categories killed (0.0–1.0)
     "quality_score": 0.0,           # composite: 0.5*mutation + 0.25*branch + 0.15*assertion + 0.10*diversity
     "llm_mutation_score": 0.0,      # kill rate on LLM-generated semantic mutants only (0.0–1.0)
+    "missing_lines": [],            # uncovered line numbers within the function (from pytest-cov)
+    "missing_branches": [],         # uncovered branch pairs [[from, to], ...] within the function
+    "score_history": [],            # quality_score after each coverage measurement (for diminishing-returns detection)
+
+    # GRPO reward signal — multi-channel, populated by run_mutation_testing and run_coverage
+    # NOT used by the supervisor; stored for RL/GRPO training on trajectory logs.
+    # GRPO normalizes each channel independently via z-score within a group — do NOT collapse to scalar before passing to GRPO.
+    "grpo_rewards": {
+        "mutation": 0.0,          # kill rate (0.0–1.0)
+        "branch_coverage": 0.0,   # function-scoped branch coverage (0.0–1.0)
+        "assertion_density": 0.0, # normalized assert count per test fn (0.0–1.0)
+        "test_diversity": 0.0,    # fraction of mutation tag categories killed (0.0–1.0)
+        "unique_kills_ratio": 0.0,# mutants killed by only one agent / total mutants (0.0–1.0)
+        "llm_mutation": 0.0,      # kill rate on LLM-generated semantic mutants (0.0–1.0)
+        "quality_score": 0.0,     # composite scalar — same as state["quality_score"], for checkpointing
+    },
 
     # history — list of past actions and their outcomes
     "history": [],                  # [{"step": int, "action": str, "outcome": str}]
@@ -69,7 +87,7 @@ state = {
 
 ## 3. Action Space
 
-Ten discrete actions. The supervisor picks exactly one per step.
+Eleven discrete actions. The supervisor picks exactly one per step.
 
 ### `generate_bva_tests`
 - Calls `call_agent("bva", state["function_info"])`
@@ -115,9 +133,20 @@ Ten discrete actions. The supervisor picks exactly one per step.
 - Collects all test file paths from disk
 - Runs `pytest --cov --cov-branch --cov-report=json` via subprocess
 - Parses JSON coverage report for line and branch coverage percentages
+- Coverage is **function-scoped**: filters executed/missing lines and branches to the function's `start_line..end_line` range
 - Updates `state["line_coverage"]` and `state["branch_coverage"]` (0.0–1.0)
+- Stores `state["missing_lines"]` and `state["missing_branches"]` for coverage-guided generation
+- Appends `state["quality_score"]` to `state["score_history"]`
 - Recomputes `state["quality_score"]`
 - Outcome: summary like "line: 85.0%, branch: 72.0%, quality=0.72"
+
+### `generate_coverage_tests`
+- Reads `state["missing_lines"]` and `state["missing_branches"]` from prior `run_coverage`
+- Builds numbered source with uncovered lines/branches highlighted
+- Calls `call_agent_with_context("coverage", fn, extra_context)` with uncovered info + existing tests
+- Stores result in `state["generated_tests"]["coverage"]`
+- Not auto-discovered (in `SPECIAL_PROMPTS`); triggered by supervisor when `branch_coverage < 0.90`
+- Outcome: number of chars generated, or "empty response"
 
 ### `refine_tests`
 - For each test type with surviving mutants, re-calls `call_agent` with extra context appended to the user message: the survived mutant descriptions
@@ -182,8 +211,9 @@ Decision logic, evaluated in order:
 5. **Coverage not yet measured** (or re-run needed) → return `run_coverage`.
 6. **Composite quality score >= 0.80** → return `stop`. Quality score = 0.5*mutation + 0.25*branch + 0.15*assertion_density + 0.10*test_diversity.
 7. **Agent has 0 unique kills AND quality < 0.80** → return `generate_{weak_agent}_tests`. Loops back to step 2.
-8. **Haven't refined yet** → return `refine_tests`. Loops back to step 2.
-9. **Otherwise** → return `stop`.
+8. **Branch coverage < 0.90 AND haven't run coverage-guided generation yet** → return `generate_coverage_tests`. Loops back to step 2.
+9. **Refined fewer than 3 times** → return `refine_tests`. If `score_history` shows < 2% improvement between last two measurements, return `stop` instead (diminishing returns). Loops back to step 2.
+10. **Otherwise** → return `stop`.
 
 The policy is pure heuristics — no LLM call. Fast and deterministic.
 
@@ -206,11 +236,11 @@ def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=20):
 **Stopping conditions:**
 - `quality_score >= 0.80` — tests are good enough (composite of mutation, coverage, assertion density, diversity)
 - `max_steps` reached (default 20) — budget exhausted
-- One refinement cycle completed and score still low — stop to avoid infinite loops
+- Three refinement cycles completed or diminishing returns (< 2% improvement between coverage measurements) — stop to avoid infinite loops
 
 **Trajectory logging:** After each run, the full state is serialized to `{output_dir}/trajectories/{fn_name}_{index}.json` for offline analysis and future RL/DPO training.
 
-**Typical run (10–16 steps):**
+**Typical run (10–20 steps):**
 1. `generate_bva_tests`
 2. `generate_ecp_tests`
 3. `generate_path_tests`
@@ -220,9 +250,10 @@ def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=20):
 7. `run_tests` (re-run after fix)
 8. `run_mutation_testing`
 9. `run_coverage`
-10. If score >= 0.85: `stop` (done in 10 steps)
-11. If score < 0.85 and weak agent: `generate_X_tests` → `run_tests` → `run_mutation_testing` → `run_coverage`
-12. If still < 0.85: `refine_tests` → `run_tests` → `run_mutation_testing` → `run_coverage` → `stop`
+10. If score >= 0.80: `stop` (done in 10 steps)
+11. If score < 0.80 and weak agent: `generate_X_tests` → `run_tests` → `run_mutation_testing` → `run_coverage`
+12. If branch_coverage < 0.90: `generate_coverage_tests` → `run_tests` → `run_mutation_testing` → `run_coverage`
+13. If still < 0.80: `refine_tests` → `run_tests` → `run_mutation_testing` → `run_coverage` (up to 3 cycles, stops on < 2% improvement)
 
 ## 7. Design Constraints
 
@@ -240,7 +271,7 @@ def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=20):
 ## 8. Future Extensions
 
 - **LLM-based supervisor policy** — replace heuristic with LLM call that takes serialized state and returns action string. Step function and action space stay identical.
-- **RL optimization** — trajectory logs (`{output_dir}/trajectories/`) contain `(state, action, outcome)` data for policy gradient or DPO. Reward signal = `quality_score` at termination.
+- **GRPO optimization** — trajectory logs contain `grpo_rewards` dicts with 7 channels. For GRPO training: use the multi-channel dict, NOT the collapsed `quality_score`. GRPO normalizes rewards within groups via z-score — passing a single compressed scalar (where all runs score 0.81–0.84) produces near-zero advantages and zero gradients. Instead, pass individual channels (mutation, branch_coverage, etc.) so GRPO can normalize each independently. See: *From Absolute to Relative* (2601.23058) and *Mind the Gap* (2309.02395).
 - **Multi-cycle refinement** — remove the one-cycle cap. Add diminishing-returns detection (if score improved < 2% on last cycle, stop).
 - **Coverage-guided generation** — `run_coverage` already collects data; add `generate_coverage_tests` action that feeds uncovered lines into a coverage-targeted prompt.
 - **Memory-informed supervisor** — connect ChromaDB `retrieve_similar()` to supervisor policy to deprioritize agents with historically 0 unique kills on similar functions.
@@ -286,7 +317,8 @@ src/
     ├── condition.md # condition/MC/DC coverage prompt
     ├── refine.md    # test refinement prompt (special, not a test agent)
     ├── fix.md       # test repair prompt (special, not a test agent)
-    └── mutate.md    # LLM-based realistic fault injection prompt (special)
+    ├── mutate.md    # LLM-based realistic fault injection prompt (special)
+    └── coverage.md  # coverage-guided test generation prompt (special, triggered by supervisor)
 ```
 
 ## Configuration
@@ -343,8 +375,8 @@ custom_mutant = 10
 ## 9. Roadmap
 
 ### Phase 2: Better Generation
-- **2A. Coverage-guided generation** — After `run_coverage`, extract `missing_lines` per function. New action `generate_coverage_tests` feeds uncovered lines + source context into a targeted prompt (`prompts/coverage.md`). Supervisor triggers it when `branch_coverage < 0.90`.
-- **2B. Multi-cycle refinement** — Remove the one-refinement cap in `supervisor_policy`. Allow up to 3 cycles; stop early if quality improvement < 0.02 (track `state["score_history"]`).
+- **2A. Coverage-guided generation** — ✅ Done. `generate_coverage_tests` action feeds uncovered lines/branches into `prompts/coverage.md`. Supervisor triggers when `branch_coverage < 0.90`. Coverage is now function-scoped (uses `start_line`/`end_line` from tree-sitter).
+- **2B. Multi-cycle refinement** — ✅ Done. Up to 3 refinement cycles; stops early if quality improvement < 0.02 between coverage measurements (tracked via `state["score_history"]`).
 - **2C. Connect memory to supervisor** — Call `retrieve_similar()` in `run_harness` before the loop; store in `state["memory_context"]`. Supervisor uses past agent performance to deprioritize weak agents for similar functions.
 
 ### Phase 3: Bigger Picture

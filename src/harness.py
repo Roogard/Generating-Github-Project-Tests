@@ -10,8 +10,14 @@ from src.writer import write_function, write_tests
 from src.runner import run_single_test
 from src.mutator import run_all_agents, compute_unique_kills
 
+#agent policy on line 344, which is where the cool stuff is
+#essentially, this document has all the different actions the agent can take
+#as well aas the steps and decision policy
 
-SPECIAL_PROMPTS = {"refine", "fix", "mutate"}
+
+
+
+SPECIAL_PROMPTS = {"refine", "fix", "mutate", "coverage"}
 
 ALL_MUTATION_TAGS = [
     "cond_neg", "boundary_up", "boundary_down", "ret_none", "not_removal",
@@ -61,6 +67,18 @@ def make_initial_state(fn, index, output_dir, repo_clone_dir, config):
         "test_diversity": 0.0,
         "quality_score": 0.0,
         "llm_mutation_score": 0.0,
+        "missing_lines": [],
+        "missing_branches": [],
+        "score_history": [],
+        "grpo_rewards": {
+            "mutation": 0.0,
+            "branch_coverage": 0.0,
+            "assertion_density": 0.0,
+            "test_diversity": 0.0,
+            "unique_kills_ratio": 0.0,
+            "llm_mutation": 0.0,
+            "quality_score": 0.0,
+        },
     }
 
 
@@ -174,6 +192,12 @@ def _handle_run_mutation_testing(state):
 
     compute_quality_score(state)
 
+    total_unique = sum(state["unique_kills"].values())
+    state["grpo_rewards"]["mutation"] = state["mutation_score"]
+    state["grpo_rewards"]["test_diversity"] = state["test_diversity"]
+    state["grpo_rewards"]["llm_mutation"] = state["llm_mutation_score"]
+    state["grpo_rewards"]["unique_kills_ratio"] = total_unique / mutant_count if mutant_count > 0 else 0.0
+
     killed_count = len(all_killed_ids)
     parts = [f"{killed_count}/{mutant_count} killed ({state['mutation_score']:.1%})"]
     if llm_mutants:
@@ -238,23 +262,54 @@ def _handle_run_coverage(state):
         return "coverage report empty or invalid"
 
     target = fn["file_path"].replace("\\", "/")
-    file_cov = None
+    file_data = None
     for fpath, fdata in cov_data.get("files", {}).items():
         if fpath.replace("\\", "/").endswith(target):
-            file_cov = fdata.get("summary", {})
+            file_data = fdata
             break
 
-    if not file_cov:
-        file_cov = cov_data.get("totals", {})
+    start = fn.get("start_line", 0)
+    end = fn.get("end_line", 0)
 
-    state["line_coverage"] = file_cov.get("percent_covered", 0.0) / 100.0
-    num_branches = file_cov.get("num_branches", 0)
-    if num_branches > 0:
-        state["branch_coverage"] = file_cov.get("covered_branches", 0) / num_branches
+    if file_data and start and end:
+        executed = [ln for ln in file_data.get("executed_lines", []) if start <= ln <= end]
+        missing = [ln for ln in file_data.get("missing_lines", []) if start <= ln <= end]
+        total_lines = len(executed) + len(missing)
+        state["line_coverage"] = len(executed) / total_lines if total_lines > 0 else 0.0
+
+        all_branches = file_data.get("missing_branches", []) + file_data.get("executed_branches", [])
+        fn_all_branches = [b for b in all_branches if start <= b[0] <= end]
+        fn_missing_branches = [b for b in file_data.get("missing_branches", []) if start <= b[0] <= end]
+        total_branches = len(fn_all_branches)
+        if total_branches > 0:
+            state["branch_coverage"] = (total_branches - len(fn_missing_branches)) / total_branches
+        else:
+            state["branch_coverage"] = 0.0
+
+        state["missing_lines"] = missing
+        state["missing_branches"] = fn_missing_branches
+    elif file_data:
+        summary = file_data.get("summary", {})
+        state["line_coverage"] = summary.get("percent_covered", 0.0) / 100.0
+        num_branches = summary.get("num_branches", 0)
+        if num_branches > 0:
+            state["branch_coverage"] = summary.get("covered_branches", 0) / num_branches
+        else:
+            state["branch_coverage"] = 0.0
+        state["missing_lines"] = file_data.get("missing_lines", [])
+        state["missing_branches"] = file_data.get("missing_branches", [])
     else:
+        totals = cov_data.get("totals", {})
+        state["line_coverage"] = totals.get("percent_covered", 0.0) / 100.0
         state["branch_coverage"] = 0.0
+        state["missing_lines"] = []
+        state["missing_branches"] = []
 
     compute_quality_score(state)
+    state["grpo_rewards"]["branch_coverage"] = state["branch_coverage"]
+    state["grpo_rewards"]["assertion_density"] = state["assertion_density"]
+    state["grpo_rewards"]["quality_score"] = state["quality_score"]
+    state["score_history"].append(state["quality_score"])
     return f"line: {state['line_coverage']:.1%}, branch: {state['branch_coverage']:.1%}, quality={state['quality_score']:.2f}"
 
 
@@ -277,6 +332,42 @@ def _handle_refine_tests(state):
             state["generated_tests"][tt] = new_code
             refined_count += 1
     return f"refined {refined_count} agents"
+
+
+def _handle_generate_coverage_tests(state):
+    fn = state["function_info"]
+    config = state["config"]
+    missing_lines = state["missing_lines"]
+    missing_branches = state["missing_branches"]
+
+    if not missing_lines and not missing_branches:
+        return "no uncovered lines or branches"
+
+    source_lines = fn["source"].split("\n")
+    start = fn.get("start_line", 1)
+    numbered = "\n".join(f"{start + i:4d}: {line}" for i, line in enumerate(source_lines))
+
+    existing_tests = "\n\n".join(
+        f"### {tt}\n```python\n{code}\n```"
+        for tt, code in state["generated_tests"].items()
+    )
+
+    parts = [f"### Function source (with line numbers)\n```\n{numbered}\n```\n"]
+    if missing_lines:
+        parts.append(f"### Uncovered lines\n{', '.join(str(ln) for ln in missing_lines)}\n")
+    if missing_branches:
+        branch_strs = [f"{b[0]}->{b[1]}" for b in missing_branches]
+        parts.append(f"### Uncovered branches\n{', '.join(branch_strs)}\n")
+    if existing_tests:
+        parts.append(f"### Existing tests\n{existing_tests}\n")
+    parts.append("Generate tests that cover the uncovered lines and branches listed above.")
+
+    extra = "\n".join(parts)
+    code = call_agent_with_context("coverage", fn, extra, config)
+    if code.strip():
+        state["generated_tests"]["coverage"] = code
+        return f"generated {len(code)} chars"
+    return "empty response"
 
 
 def _handle_fix_tests(state):
@@ -311,16 +402,17 @@ _HANDLERS = {
     "run_coverage": _handle_run_coverage,
     "refine_tests": _handle_refine_tests,
     "fix_tests": _handle_fix_tests,
+    "generate_coverage_tests": _handle_generate_coverage_tests,
     "stop": _handle_stop,
 }
 
 
 def _dispatch(state, action):
-    if action.startswith("generate_") and action.endswith("_tests"):
-        return _handle_generate_tests(state, action)
     handler = _HANDLERS.get(action)
     if handler:
         return handler(state)
+    if action.startswith("generate_") and action.endswith("_tests"):
+        return _handle_generate_tests(state, action)
     return f"unknown action: {action}"
 
 
@@ -334,6 +426,10 @@ def step(state, action):
     new["history"] = list(state["history"])
     new["planned_generates"] = list(state["planned_generates"])
     new["unique_kills"] = dict(state["unique_kills"])
+    new["missing_lines"] = list(state["missing_lines"])
+    new["missing_branches"] = list(state["missing_branches"])
+    new["score_history"] = list(state["score_history"])
+    new["grpo_rewards"] = dict(state["grpo_rewards"])
     new["step_count"] = state["step_count"] + 1
 
     outcome = _dispatch(new, action)
@@ -341,6 +437,8 @@ def step(state, action):
     return new
 
 
+#the main function worth looking at. this decides when the agent does what. Right now, it 
+#it is just a simple policy with set rules, but will be replaces with an agent soon
 def supervisor_policy(state):
     config = state["config"]
     quality_threshold = config["harness"]["quality_threshold"]
@@ -386,7 +484,16 @@ def supervisor_policy(state):
             if count == 0 and regen_action not in history_actions[len(state["planned_generates"]):]:
                 return regen_action
 
-    if refine_count == 0:
+    coverage_gen_count = history_actions.count("generate_coverage_tests")
+    if state["branch_coverage"] < 0.90 and coverage_gen_count == 0:
+        return "generate_coverage_tests"
+
+    if refine_count < 3:
+        score_history = state["score_history"]
+        if refine_count == 0:
+            return "refine_tests"
+        if len(score_history) >= 2 and score_history[-1] - score_history[-2] < 0.02:
+            return "stop"
         return "refine_tests"
 
     return "stop"

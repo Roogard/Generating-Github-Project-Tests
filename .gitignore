@@ -34,9 +34,6 @@ htmlcov/
 data/model.pkl
 data/dataset.json
 
-# Generated outputs (large, reproducible)
-eval_output/
-
 # Temp files
 *.tmp
 *.log
