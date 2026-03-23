@@ -7,13 +7,23 @@ from langchain_openai import ChatOpenAI
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 
 
-def get_llm():
-    model = os.environ.get("LLM_MODEL", "deepseek-chat")
-    return ChatOpenAI(
-        model=model,
-        api_key=os.environ.get("DEEPSEEK_API_KEY"),
-        base_url="https://api.deepseek.com",
-    )
+def get_llm(config):
+    provider = config["llm"]["provider"]
+    model = config["llm"]["model"]
+    base_url = config["llm"]["base_url"]
+    api_key_env = config["llm"]["api_key_env"]
+    api_key = os.environ.get(api_key_env, "") if api_key_env else ""
+
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+        return ChatAnthropic(model=model, api_key=api_key)
+
+    kwargs = {"model": model}
+    if api_key:
+        kwargs["api_key"] = api_key
+    if base_url:
+        kwargs["base_url"] = base_url
+    return ChatOpenAI(**kwargs)
 
 
 def build_user_message(fn):
@@ -29,10 +39,10 @@ def build_user_message(fn):
     return msg
 
 
-def call_agent(prompt_name, fn):
+def call_agent(prompt_name, fn, config):
     system = (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
     user = build_user_message(fn)
-    llm = get_llm()
+    llm = get_llm(config)
     try:
         response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
         return response.content
@@ -41,10 +51,10 @@ def call_agent(prompt_name, fn):
         return ""
 
 
-def call_agent_with_context(prompt_name, fn, extra_context):
+def call_agent_with_context(prompt_name, fn, extra_context, config):
     system = (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
     user = build_user_message(fn) + "\n\n" + extra_context
-    llm = get_llm()
+    llm = get_llm(config)
     try:
         response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
         return response.content

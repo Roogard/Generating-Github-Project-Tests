@@ -27,7 +27,6 @@ import chromadb
 from langchain_core.messages import SystemMessage, HumanMessage
 
 from src.agents import get_llm
-from src.harness import HARNESS_TEST_TYPES as TEST_TYPES
 
 
 def get_db(path="data/memory_db"):
@@ -63,7 +62,7 @@ def store_result(collection, fn, selected_agents, agent_kills, agent_totals, mut
     # store per-agent results as flattened keys (chromadb metadata must be flat)
     overall_killed = 0
     overall_total = 0
-    for agent in TEST_TYPES:
+    for agent in selected_agents:
         killed = len(agent_kills.get(agent, set()))
         total = agent_totals.get(agent, 0)
         rate = killed / total if total > 0 else 0.0
@@ -130,7 +129,7 @@ def get_reflections(db, limit=10):
     return [doc for _, doc in pairs[:limit]]
 
 
-def format_memory_context(similar_results, reflections):
+def format_memory_context(similar_results, reflections, test_types):
     parts = []
 
     if similar_results:
@@ -141,7 +140,7 @@ def format_memory_context(similar_results, reflections):
             overall = meta.get("overall_kill_rate", 0)
 
             agent_details = []
-            for agent in TEST_TYPES:
+            for agent in test_types:
                 killed = meta.get(f"{agent}_killed", 0)
                 total = meta.get(f"{agent}_total", 0)
                 unique = meta.get(f"{agent}_unique", 0)
@@ -165,7 +164,7 @@ def format_memory_context(similar_results, reflections):
     return "\n\n".join(parts)
 
 
-def generate_reflections(batch_records):
+def generate_reflections(batch_records, config, test_types):
     if not batch_records:
         return []
 
@@ -181,7 +180,7 @@ def generate_reflections(batch_records):
         name = rec["function_name"]
         agents = rec["agents_selected"]
         details = []
-        for agent in TEST_TYPES:
+        for agent in test_types:
             killed = rec.get(f"{agent}_killed", 0)
             total = rec.get(f"{agent}_total", 0)
             unique = rec.get(f"{agent}_unique", 0)
@@ -193,7 +192,7 @@ def generate_reflections(batch_records):
 
     user_msg = "Batch results:\n" + "\n".join(lines)
 
-    llm = get_llm()
+    llm = get_llm(config)
     response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user_msg)])
 
     text = response.content.strip()

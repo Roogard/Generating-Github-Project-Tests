@@ -38,7 +38,7 @@ def discover_tests(test_cases_dir):
     return tests
 
 
-def run_single_test(test_file, repo_clone_dir):
+def run_single_test(test_file, repo_clone_dir, timeout=60):
     report_file = tempfile.mktemp(suffix=".json")
     env = os.environ.copy()
     env["PYTHONPATH"] = repo_clone_dir + os.pathsep + env.get("PYTHONPATH", "")
@@ -48,7 +48,7 @@ def run_single_test(test_file, repo_clone_dir):
             [sys.executable, "-m", "pytest", test_file,
              "--json-report", f"--json-report-file={report_file}",
              "-q", "--tb=short", "--no-header"],
-            capture_output=True, text=True, env=env, timeout=60,
+            capture_output=True, text=True, env=env, timeout=timeout,
         )
     except subprocess.TimeoutExpired:
         if os.path.exists(report_file):
@@ -58,7 +58,7 @@ def run_single_test(test_file, repo_clone_dir):
             "failed": [],
             "errors": ["__timeout__"],
             "stdout": "",
-            "stderr": "Test timed out after 60s",
+            "stderr": f"Test timed out after {timeout}s",
             "returncode": -1,
         }
 
@@ -81,6 +81,10 @@ def run_single_test(test_file, repo_clone_dir):
         os.remove(report_file)
     else:
         tests_error.append("__import_or_collection_error__")
+
+    # pytest compiled the file but collected 0 tests (e.g. all errored during collection)
+    if not tests_passed and not tests_failed and not tests_error and result.returncode != 0:
+        tests_error.append("__collection_error__")
 
     return {
         "passed": tests_passed,

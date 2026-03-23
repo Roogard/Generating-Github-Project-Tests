@@ -10,8 +10,9 @@ import tempfile
 
 from dotenv import load_dotenv
 
+from src.config import load_config
 from src.extractor import clone_repo, extract_functions
-from src.harness import run_harness
+from src.harness import run_harness, discover_test_types
 from src.writer import write_meta
 from src.mutator import compute_unique_kills
 from src.memory import (
@@ -20,6 +21,7 @@ from src.memory import (
 )
 
 
+#generated commands for custimization while running, i almost never use these and just run benchmark and compare
 def parse_args():
     p = argparse.ArgumentParser(description="Generate unit tests for a GitHub repo")
     p.add_argument("--repo", default="https://github.com/keon/algorithms", help="GitHub repo URL")
@@ -30,9 +32,27 @@ def parse_args():
     p.add_argument("--min-branches", type=int, default=0, dest="min_branches", help="Skip functions with fewer than N branches")
     p.add_argument("--max-branches", type=int, default=0, dest="max_branches", help="Skip functions with more than N branches")
     p.add_argument("--stratify", action="store_true", help="Sample evenly across simple/moderate/complex functions")
+    p.add_argument("--provider", default=None, help="LLM provider (deepseek, openai, anthropic, ollama)")
+    p.add_argument("--model", default=None, help="LLM model name")
+    p.add_argument("--quality-threshold", type=float, default=None, dest="quality_threshold", help="Quality score threshold to stop (0.0-1.0)")
+    p.add_argument("--max-steps", type=int, default=None, dest="max_steps", help="Max harness steps per function")
     return vars(p.parse_args())
 
 
+def _build_config_overrides(args):
+    overrides = {}
+    if args.get("provider"):
+        overrides.setdefault("llm", {})["provider"] = args["provider"]
+    if args.get("model"):
+        overrides.setdefault("llm", {})["model"] = args["model"]
+    if args.get("quality_threshold") is not None:
+        overrides.setdefault("harness", {})["quality_threshold"] = args["quality_threshold"]
+    if args.get("max_steps") is not None:
+        overrides.setdefault("harness", {})["max_steps"] = args["max_steps"]
+    return overrides or None
+
+
+#at first everything i used was really simple, so adding this ensures different difficulty repos and functions are used
 def _fn_complexity(source):
     lines = len(source.strip().splitlines())
     try:
@@ -79,16 +99,21 @@ def _stratified_sample(functions, limit):
 
 def main():
     load_dotenv()
-    config = parse_args()
+    args = parse_args()
+    config = load_config(_build_config_overrides(args))
 
-    repo = config["repo"]
-    output_base = config["output"]
-    limit = config["limit"]
-    min_lines = config["min_lines"]
-    max_lines = config["max_lines"]
-    min_branches = config["min_branches"]
-    max_branches = config["max_branches"]
-    stratify = config["stratify"]
+    repo = args["repo"]
+    output_base = args["output"]
+    limit = args["limit"]
+    min_lines = args["min_lines"]
+    max_lines = args["max_lines"]
+    min_branches = args["min_branches"]
+    max_branches = args["max_branches"]
+    stratify = args["stratify"]
+
+    test_types = discover_test_types(config)
+    print(f"Test agents: {test_types}")
+    print(f"LLM: {config['llm']['provider']}/{config['llm']['model']}")
 
     db = get_db()
     collection = get_collection(db)
@@ -140,7 +165,7 @@ def main():
     batch_records = []
     for i, fn in enumerate(functions):
         print(f"\n--- Function {i + 1}/{len(functions)}: {fn['name']} ---")
-        final_state = run_harness(fn, i, output_dir, tmp)
+        final_state = run_harness(fn, i, output_dir, tmp, config)
 
         agent_kills = final_state["agent_kills"]
         mutant_count = final_state["mutant_count"]
@@ -168,7 +193,7 @@ def main():
 
     if batch_records:
         print("\nGenerating reflections from this run...")
-        reflection_texts = generate_reflections(batch_records)
+        reflection_texts = generate_reflections(batch_records, config, test_types)
         for text in reflection_texts:
             store_reflection(db, text)
         print(f"Memory updated: {collection.count()} function records, "

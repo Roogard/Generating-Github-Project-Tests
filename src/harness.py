@@ -1,20 +1,47 @@
+import json
 import os
+import re
+import subprocess
+import sys
+import tempfile
 
 from src.agents import call_agent, call_agent_with_context
 from src.writer import write_function, write_tests
 from src.runner import run_single_test
-from src.mutator import run_all_agents
+from src.mutator import run_all_agents, compute_unique_kills
 
 
-HARNESS_TEST_TYPES = ["bva", "ecp", "path", "condition"]
+SPECIAL_PROMPTS = {"refine", "fix", "mutate"}
+
+ALL_MUTATION_TAGS = [
+    "cond_neg", "boundary_up", "boundary_down", "ret_none", "not_removal",
+    "aug_swap", "bool_swap", "exc_broaden", "arith_swap", "cmp_swap",
+    "logic_swap", "sign_flip", "stmt_del", "const_replace", "llm_mutant",
+]
 
 
-def make_initial_state(fn, index, output_dir, repo_clone_dir):
+def discover_test_types(config):
+    explicit = config["harness"]["test_types"]
+    if explicit:
+        return list(explicit)
+    prompts_dir = os.path.join(os.path.dirname(__file__), "prompts")
+    types = []
+    for f in sorted(os.listdir(prompts_dir)):
+        if f.endswith(".md"):
+            name = f[:-3]
+            if name not in SPECIAL_PROMPTS:
+                types.append(name)
+    return types
+
+
+def make_initial_state(fn, index, output_dir, repo_clone_dir, config):
+    test_types = discover_test_types(config)
     return {
         "function_info": fn,
         "index": index,
         "output_dir": output_dir,
         "repo_clone_dir": repo_clone_dir,
+        "config": config,
         "generated_tests": {},
         "test_results": {},
         "mutation_score": 0.0,
@@ -25,118 +52,275 @@ def make_initial_state(fn, index, output_dir, repo_clone_dir):
         "history": [],
         "step_count": 0,
         "done": False,
-        "planned_generates": list(HARNESS_TEST_TYPES),
+        "planned_generates": test_types,
+        "fix_attempts": 0,
+        "line_coverage": 0.0,
+        "branch_coverage": 0.0,
+        "unique_kills": {},
+        "assertion_density": 0.0,
+        "test_diversity": 0.0,
+        "quality_score": 0.0,
+        "llm_mutation_score": 0.0,
     }
 
 
-def _dispatch(state, action):
+def _compute_assertion_density(generated_tests):
+    total_asserts = 0
+    total_test_fns = 0
+    for code in generated_tests.values():
+        total_asserts += len(re.findall(r'^\s*assert\b', code, re.MULTILINE))
+        total_test_fns += len(re.findall(r'^\s*def test_', code, re.MULTILINE))
+    if total_test_fns == 0:
+        return 0.0
+    return min((total_asserts / total_test_fns) / 3.0, 1.0)
+
+
+def _compute_test_diversity(killed_mutants):
+    if not killed_mutants:
+        return 0.0
+    killed_tags = set(m["tag"] for m in killed_mutants)
+    return len(killed_tags) / len(ALL_MUTATION_TAGS)
+
+
+def compute_quality_score(state):
+    score = (
+        0.50 * state["mutation_score"]
+        + 0.25 * state["branch_coverage"]
+        + 0.15 * state["assertion_density"]
+        + 0.10 * state["test_diversity"]
+    )
+    state["quality_score"] = round(score, 4)
+    return score
+
+
+def _test_dir(state):
     fn = state["function_info"]
+    return os.path.join(state["output_dir"], "test_cases", f"{fn['name']}_{state['index']}")
 
-    # generate_*_tests actions
-    if action.startswith("generate_") and action.endswith("_tests"):
-        test_type = action[len("generate_"):-len("_tests")]
-        code = call_agent(test_type, fn)
-        if code.strip():
-            state["generated_tests"][test_type] = code
-            return f"generated {len(code)} chars"
-        return "empty response"
 
-    if action == "run_tests":
-        index = state["index"]
-        output_dir = state["output_dir"]
-        repo_clone_dir = state["repo_clone_dir"]
+def _test_file(state, tt):
+    return os.path.join(_test_dir(state), f"test_{tt}.py")
 
-        # write_tests expects {"bva_tests": code, ...} format
-        test_results_for_writer = {}
-        for tt, code in state["generated_tests"].items():
-            test_results_for_writer[f"{tt}_tests"] = code
-        write_tests(fn, test_results_for_writer, output_dir, index)
 
-        # run each test file
-        total_passed = 0
-        total_failed = 0
-        total_errors = 0
-        for tt in state["generated_tests"]:
-            test_file = os.path.join(output_dir, "test_cases", f"{fn['name']}_{index}", f"test_{tt}.py")
-            if not os.path.exists(test_file):
-                continue
-            result = run_single_test(test_file, repo_clone_dir)
-            state["test_results"][tt] = {
-                "passed": result["passed"],
-                "failed": result["failed"],
-                "errors": result["errors"],
-            }
-            total_passed += len(result["passed"])
-            total_failed += len(result["failed"])
-            total_errors += len(result["errors"])
+def _handle_generate_tests(state, action):
+    test_type = action[len("generate_"):-len("_tests")]
+    config = state["config"]
+    code = call_agent(test_type, state["function_info"], config)
+    if code.strip():
+        state["generated_tests"][test_type] = code
+        return f"generated {len(code)} chars"
+    return "empty response"
 
-        return f"{total_passed} passed, {total_failed} failed, {total_errors} errors"
 
-    if action == "run_mutation_testing":
-        index = state["index"]
-        output_dir = state["output_dir"]
-        repo_clone_dir = state["repo_clone_dir"]
+def _handle_run_tests(state):
+    fn = state["function_info"]
+    config = state["config"]
+    test_timeout = config["timeouts"]["test"]
+    write_tests(fn, {f"{tt}_tests": code for tt, code in state["generated_tests"].items()},
+                state["output_dir"], state["index"])
 
-        func_file = os.path.join(output_dir, "functions", f"{fn['name']}_{index}", "function.py")
-        original_file = os.path.join(repo_clone_dir, fn["file_path"]) if fn.get("file_path") else None
+    passed = failed = errors = 0
+    for tt in state["generated_tests"]:
+        path = _test_file(state, tt)
+        if not os.path.exists(path):
+            continue
+        result = run_single_test(path, state["repo_clone_dir"], timeout=test_timeout)
+        state["test_results"][tt] = result
+        passed += len(result["passed"])
+        failed += len(result["failed"])
+        errors += len(result["errors"])
 
-        test_files_dict = {}
-        for tt in state["generated_tests"]:
-            test_file = os.path.join(output_dir, "test_cases", f"{fn['name']}_{index}", f"test_{tt}.py")
-            if os.path.exists(test_file):
-                test_files_dict[tt] = test_file
+    state["assertion_density"] = _compute_assertion_density(state["generated_tests"])
+    return f"{passed} passed, {failed} failed, {errors} errors"
 
-        if not test_files_dict:
-            return "no test files on disk"
 
-        agent_kills, agent_totals, mutant_count, mutant_descriptions = run_all_agents(
-            func_file, test_files_dict, repo_clone_dir, fn["source"], original_file=original_file
+def _handle_run_mutation_testing(state):
+    fn = state["function_info"]
+    config = state["config"]
+
+    total_passed = sum(len(r.get("passed", [])) for r in state["test_results"].values())
+    if total_passed == 0:
+        return "no passing tests, skipping mutation testing"
+
+    func_file = os.path.join(state["output_dir"], "functions", f"{fn['name']}_{state['index']}", "function.py")
+    original_file = os.path.join(state["repo_clone_dir"], fn["file_path"]) if fn.get("file_path") else None
+
+    test_files_dict = {tt: _test_file(state, tt) for tt in state["generated_tests"]
+                      if os.path.exists(_test_file(state, tt))}
+    if not test_files_dict:
+        return "no test files on disk"
+
+    agent_kills, _, mutant_count, mutant_descriptions = run_all_agents(
+        func_file, test_files_dict, state["repo_clone_dir"], fn["source"],
+        original_file=original_file, fn=fn, config=config
+    )
+
+    all_killed_ids = set().union(*agent_kills.values()) if agent_kills else set()
+
+    state["agent_kills"] = agent_kills
+    state["mutant_count"] = mutant_count
+    state["unique_kills"] = compute_unique_kills(agent_kills)
+    state["survived_mutants"] = [m for m in mutant_descriptions if m["id"] not in all_killed_ids]
+    state["killed_mutants"] = [m for m in mutant_descriptions if m["id"] in all_killed_ids]
+    state["mutation_score"] = len(all_killed_ids) / mutant_count if mutant_count > 0 else 0.0
+    state["test_diversity"] = _compute_test_diversity(state["killed_mutants"])
+
+    llm_mutants = [m for m in mutant_descriptions if m["tag"] == "llm_mutant"]
+    if llm_mutants:
+        llm_ids = set(m["id"] for m in llm_mutants)
+        state["llm_mutation_score"] = len(all_killed_ids & llm_ids) / len(llm_ids)
+    else:
+        state["llm_mutation_score"] = 0.0
+
+    compute_quality_score(state)
+
+    killed_count = len(all_killed_ids)
+    parts = [f"{killed_count}/{mutant_count} killed ({state['mutation_score']:.1%})"]
+    if llm_mutants:
+        parts.append(f"llm={state['llm_mutation_score']:.1%}")
+    parts.append(f"quality={state['quality_score']:.2f}")
+    return ", ".join(parts)
+
+
+def _handle_run_coverage(state):
+    fn = state["function_info"]
+    config = state["config"]
+    coverage_timeout = config["timeouts"]["coverage"]
+
+    total_passed = sum(len(r.get("passed", [])) for r in state["test_results"].values())
+    if total_passed == 0:
+        return "no passing tests, skipping coverage"
+
+    # only include test files that have passing tests (skip broken ones that crash pytest-cov)
+    test_files = []
+    for tt in state["generated_tests"]:
+        r = state["test_results"].get(tt, {})
+        if not r.get("passed"):
+            continue
+        path = _test_file(state, tt)
+        if os.path.exists(path):
+            test_files.append(os.path.abspath(path))
+    if not test_files:
+        return "no passing test files on disk"
+
+    original_file = os.path.join(state["repo_clone_dir"], fn["file_path"])
+    source_dir = os.path.dirname(original_file)
+
+    report_fd, report_file = tempfile.mkstemp(suffix=".json")
+    os.close(report_fd)
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = state["repo_clone_dir"] + os.pathsep + env.get("PYTHONPATH", "")
+
+    cmd = [sys.executable, "-m", "pytest"] + test_files + [
+        f"--cov={source_dir}", "--cov-branch",
+        f"--cov-report=json:{report_file}", "-q", "--no-header",
+    ]
+
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, env=env,
+                       cwd=state["repo_clone_dir"], timeout=coverage_timeout)
+    except subprocess.TimeoutExpired:
+        return "coverage timed out"
+
+    if not os.path.exists(report_file) or os.path.getsize(report_file) == 0:
+        if os.path.exists(report_file):
+            os.remove(report_file)
+        return "coverage report not generated"
+
+    try:
+        with open(report_file, encoding="utf-8") as f:
+            cov_data = json.load(f)
+        os.remove(report_file)
+    except (json.JSONDecodeError, ValueError):
+        if os.path.exists(report_file):
+            os.remove(report_file)
+        return "coverage report empty or invalid"
+
+    target = fn["file_path"].replace("\\", "/")
+    file_cov = None
+    for fpath, fdata in cov_data.get("files", {}).items():
+        if fpath.replace("\\", "/").endswith(target):
+            file_cov = fdata.get("summary", {})
+            break
+
+    if not file_cov:
+        file_cov = cov_data.get("totals", {})
+
+    state["line_coverage"] = file_cov.get("percent_covered", 0.0) / 100.0
+    num_branches = file_cov.get("num_branches", 0)
+    if num_branches > 0:
+        state["branch_coverage"] = file_cov.get("covered_branches", 0) / num_branches
+    else:
+        state["branch_coverage"] = 0.0
+
+    compute_quality_score(state)
+    return f"line: {state['line_coverage']:.1%}, branch: {state['branch_coverage']:.1%}, quality={state['quality_score']:.2f}"
+
+
+def _handle_refine_tests(state):
+    config = state["config"]
+    survived = state["survived_mutants"]
+    if not survived:
+        return "no survived mutants to refine against"
+
+    survived_text = "\n".join(f"- [{m['tag']}] {m['description']}" for m in survived)
+    refined_count = 0
+    for tt in list(state["generated_tests"].keys()):
+        extra = (
+            f"### Current tests\n```python\n{state['generated_tests'][tt]}\n```\n\n"
+            f"### Survived mutants\nThese mutations were NOT caught by the current tests:\n{survived_text}\n\n"
+            "Generate an improved complete test file that kills the surviving mutants."
         )
+        new_code = call_agent_with_context("refine", state["function_info"], extra, config)
+        if new_code.strip():
+            state["generated_tests"][tt] = new_code
+            refined_count += 1
+    return f"refined {refined_count} agents"
 
-        state["agent_kills"] = agent_kills
-        state["mutant_count"] = mutant_count
 
-        # compute which mutants survived across all agents
-        all_killed_ids = set()
-        for kills in agent_kills.values():
-            all_killed_ids |= kills
+def _handle_fix_tests(state):
+    config = state["config"]
+    state["fix_attempts"] += 1
+    fixed_count = 0
+    for tt in list(state["test_results"].keys()):
+        r = state["test_results"][tt]
+        if not r["errors"] and not r["failed"]:
+            continue
+        extra = (
+            f"### Current test code\n```python\n{state['generated_tests'].get(tt, '')}\n```\n\n"
+            f"### Error output\n**stdout:**\n```\n{r['stdout']}\n```\n\n"
+            f"**stderr:**\n```\n{r['stderr']}\n```\n\n"
+            "Fix the tests so they pass. Return the complete corrected test file."
+        )
+        new_code = call_agent_with_context("fix", state["function_info"], extra, config)
+        if new_code.strip():
+            state["generated_tests"][tt] = new_code
+            fixed_count += 1
+    return f"fixed {fixed_count} test types"
 
-        state["survived_mutants"] = [m for m in mutant_descriptions if m["id"] not in all_killed_ids]
-        state["killed_mutants"] = [m for m in mutant_descriptions if m["id"] in all_killed_ids]
 
-        if mutant_count > 0:
-            state["mutation_score"] = len(all_killed_ids) / mutant_count
-        else:
-            state["mutation_score"] = 0.0
+def _handle_stop(state):
+    state["done"] = True
+    return "stopped"
 
-        killed_count = len(all_killed_ids)
-        return f"{killed_count}/{mutant_count} killed ({state['mutation_score']:.1%})"
 
-    if action == "refine_tests":
-        survived = state["survived_mutants"]
-        if not survived:
-            return "no survived mutants to refine against"
+_HANDLERS = {
+    "run_tests": _handle_run_tests,
+    "run_mutation_testing": _handle_run_mutation_testing,
+    "run_coverage": _handle_run_coverage,
+    "refine_tests": _handle_refine_tests,
+    "fix_tests": _handle_fix_tests,
+    "stop": _handle_stop,
+}
 
-        survived_text = "\n".join(f"- [{m['tag']}] {m['description']}" for m in survived)
 
-        refined_count = 0
-        for tt in list(state["generated_tests"].keys()):
-            current_tests = state["generated_tests"][tt]
-            extra = f"### Current tests\n```python\n{current_tests}\n```\n\n"
-            extra += f"### Survived mutants\nThese mutations were NOT caught by the current tests:\n{survived_text}\n\n"
-            extra += "Generate an improved complete test file that kills the surviving mutants."
-
-            new_code = call_agent_with_context("refine", fn, extra)
-            if new_code.strip():
-                state["generated_tests"][tt] = new_code
-                refined_count += 1
-
-        return f"refined {refined_count} agents"
-
-    if action == "stop":
-        state["done"] = True
-        return "stopped"
-
+def _dispatch(state, action):
+    if action.startswith("generate_") and action.endswith("_tests"):
+        return _handle_generate_tests(state, action)
+    handler = _HANDLERS.get(action)
+    if handler:
+        return handler(state)
     return f"unknown action: {action}"
 
 
@@ -149,65 +333,101 @@ def step(state, action):
     new["killed_mutants"] = list(state["killed_mutants"])
     new["history"] = list(state["history"])
     new["planned_generates"] = list(state["planned_generates"])
+    new["unique_kills"] = dict(state["unique_kills"])
     new["step_count"] = state["step_count"] + 1
 
     outcome = _dispatch(new, action)
-
-    new["history"].append({
-        "step": new["step_count"],
-        "action": action,
-        "outcome": outcome,
-    })
+    new["history"].append({"step": new["step_count"], "action": action, "outcome": outcome})
     return new
 
 
 def supervisor_policy(state):
+    config = state["config"]
+    quality_threshold = config["harness"]["quality_threshold"]
+    max_fix_attempts = config["harness"]["max_fix_attempts"]
     history_actions = [h["action"] for h in state["history"]]
 
-    # phase 1: generate tests for planned agents
     for tt in state["planned_generates"]:
         if tt not in state["generated_tests"]:
             return f"generate_{tt}_tests"
 
-    # phase 2: run tests if not yet run (or if refined since last run)
-    has_test_results = bool(state["test_results"])
     refine_count = history_actions.count("refine_tests")
+    fix_count = history_actions.count("fix_tests")
     run_count = history_actions.count("run_tests")
+    regen_count = sum(1 for a in history_actions[len(state["planned_generates"]):]
+                      if a.startswith("generate_") and a.endswith("_tests"))
 
-    if not has_test_results or (refine_count > 0 and run_count <= refine_count):
+    if run_count == 0 or run_count <= refine_count + fix_count + regen_count:
         return "run_tests"
 
-    # phase 3: run mutation testing if not yet run (or if refined since last mutation run)
+    has_broken = any(r["errors"] or r["failed"] for r in state["test_results"].values())
+    if has_broken and state["fix_attempts"] < max_fix_attempts:
+        return "fix_tests"
+
     mutation_run_count = history_actions.count("run_mutation_testing")
-    if mutation_run_count == 0 or (refine_count > 0 and mutation_run_count <= refine_count):
+    if mutation_run_count == 0 or mutation_run_count <= refine_count + regen_count:
         return "run_mutation_testing"
 
-    # phase 4: evaluate
-    if state["mutation_score"] >= 0.85:
+    coverage_run_count = history_actions.count("run_coverage")
+    if coverage_run_count == 0 or coverage_run_count <= refine_count + regen_count:
+        return "run_coverage"
+
+    if state["quality_score"] >= quality_threshold:
         return "stop"
 
-    # one refinement cycle max
+    # stop if no tests pass after 2+ run_tests attempts — function is untestable
+    total_passed = sum(len(r.get("passed", [])) for r in state["test_results"].values())
+    if total_passed == 0 and run_count >= 2:
+        return "stop"
+
+    if state["unique_kills"] and state["quality_score"] < quality_threshold:
+        for tt, count in state["unique_kills"].items():
+            regen_action = f"generate_{tt}_tests"
+            if count == 0 and regen_action not in history_actions[len(state["planned_generates"]):]:
+                return regen_action
+
     if refine_count == 0:
         return "refine_tests"
 
     return "stop"
 
 
-def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=15):
-    # write the function file first
-    write_function(fn, output_dir, index)
+def _serialize_state_for_log(state):
+    out = {}
+    for k, v in state.items():
+        if k == "agent_kills":
+            out[k] = {tt: sorted(ids) for tt, ids in v.items()}
+        elif k == "function_info":
+            out[k] = {"name": v["name"], "file_path": v.get("file_path", ""), "language": v.get("language", "")}
+        elif k in ("repo_clone_dir", "output_dir", "config"):
+            continue
+        else:
+            out[k] = v
+    return out
 
-    state = make_initial_state(fn, index, output_dir, repo_clone_dir)
+
+def _save_trajectory(state):
+    traj_dir = os.path.join(state["output_dir"], "trajectories")
+    os.makedirs(traj_dir, exist_ok=True)
+    fn = state["function_info"]
+    path = os.path.join(traj_dir, f"{fn['name']}_{state['index']}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(_serialize_state_for_log(state), f, indent=2, default=str)
+
+
+def run_harness(fn, index, output_dir, repo_clone_dir, config, max_steps=None):
+    if max_steps is None:
+        max_steps = config["harness"]["max_steps"]
+    write_function(fn, output_dir, index)
+    state = make_initial_state(fn, index, output_dir, repo_clone_dir, config)
 
     for i in range(max_steps):
         action = supervisor_policy(state)
         print(f"  [{fn['name']}] step {i + 1}: {action}")
         state = step(state, action)
-
-        last_outcome = state["history"][-1]["outcome"]
-        print(f"    -> {last_outcome}")
-
+        print(f"    -> {state['history'][-1]['outcome']}")
         if state["done"]:
             break
 
+    _save_trajectory(state)
     return state
