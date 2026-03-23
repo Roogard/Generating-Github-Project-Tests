@@ -17,7 +17,7 @@ METRICS = [
 
 
 def load_runs(base_dir):
-    pattern = os.path.join(base_dir, "run_*", "benchmark_results.json")
+    pattern = os.path.join(base_dir, "*", "benchmark_results.json")
     paths = sorted(glob.glob(pattern))
     runs = []
     for p in paths:
@@ -131,7 +131,7 @@ def compare(base_dir, last):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Compare benchmark runs")
-    p.add_argument("--dir", default="eval_output/benchmark", help="Base benchmark directory")
+    p.add_argument("--dir", default="eval_output", help="Base benchmark directory")
     p.add_argument("--last", type=int, default=0, help="Compare only the last N runs (0 = all)")
     args = p.parse_args()
     compare(args.dir, args.last)

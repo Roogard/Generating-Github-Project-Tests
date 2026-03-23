@@ -25,7 +25,7 @@ from src.memory import (
 def parse_args():
     p = argparse.ArgumentParser(description="Generate unit tests for a GitHub repo")
     p.add_argument("--repo", default="https://github.com/keon/algorithms", help="GitHub repo URL")
-    p.add_argument("--output", default="./outputs", help="Output directory")
+    p.add_argument("--output", default="./eval_output", help="Output directory")
     p.add_argument("--limit", type=int, default=3, help="Max functions to process")
     p.add_argument("--min-lines", type=int, default=0, dest="min_lines", help="Skip functions shorter than N lines")
     p.add_argument("--max-lines", type=int, default=0, dest="max_lines", help="Skip functions longer than N lines")
@@ -160,6 +160,7 @@ def main():
         print(f"Using first {limit} function(s)")
 
     # --- Run harness ---
+    #everything is pretty much put through run_harness
 
     print("\nRunning harness (iterative refinement)...")
     batch_records = []

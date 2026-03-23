@@ -35,7 +35,6 @@ data/model.pkl
 data/dataset.json
 
 # Generated outputs (large, reproducible)
-outputs/
 eval_output/
 
 # Temp files

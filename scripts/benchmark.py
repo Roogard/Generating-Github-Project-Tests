@@ -22,7 +22,7 @@ def load_benchmark(path="data/benchmark_functions.json"):
         return json.load(f)
 
 
-def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit=0):
+def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
     load_dotenv()
     config = load_config()
 
@@ -39,8 +39,8 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit
         by_repo[repo].append(entry)
 
     # timestamped run directory so runs accumulate
-    timestamp = datetime.now().strftime("%Y-%m-%dT%H-%M-%S")
-    run_dir = os.path.join(output_dir, f"run_{timestamp}")
+    timestamp = datetime.now().strftime("%d-%m-%Y_%H-%M")
+    run_dir = os.path.join(output_dir, timestamp)
     os.makedirs(run_dir, exist_ok=True)
 
     results = []
@@ -111,6 +111,7 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit
                 print(f"  quality={final_state.get('quality_score', 0):.2f}, "
                       f"mutation={final_state['mutation_score']:.1%}, "
                       f"llm_mutation={final_state.get('llm_mutation_score', 0):.1%}, "
+                      f"line={final_state['line_coverage']:.1%}, "
                       f"branch={final_state['branch_coverage']:.1%}, "
                       f"steps={final_state['step_count']}, "
                       f"time={elapsed:.1f}s")
@@ -143,6 +144,7 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit
         avg_quality = sum(r["quality_score"] for r in ok_results) / len(ok_results)
         avg_mutation = sum(r["mutation_score"] for r in ok_results) / len(ok_results)
         avg_llm_mutation = sum(r["llm_mutation_score"] for r in ok_results) / len(ok_results)
+        avg_line = sum(r["line_coverage"] for r in ok_results) / len(ok_results)
         avg_branch = sum(r["branch_coverage"] for r in ok_results) / len(ok_results)
         avg_steps = sum(r["steps"] for r in ok_results) / len(ok_results)
 
@@ -150,6 +152,7 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit
         print(f"  Avg quality score:      {avg_quality:.3f}")
         print(f"  Avg mutation score:     {avg_mutation:.1%}")
         print(f"  Avg LLM mutation score: {avg_llm_mutation:.1%}")
+        print(f"  Avg line coverage:      {avg_line:.1%}")
         print(f"  Avg branch coverage:    {avg_branch:.1%}")
         print(f"  Avg steps:              {avg_steps:.1f}")
 
@@ -160,8 +163,11 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit
                 t_quality = sum(r["quality_score"] for r in tier_results) / len(tier_results)
                 t_mutation = sum(r["mutation_score"] for r in tier_results) / len(tier_results)
                 t_llm = sum(r["llm_mutation_score"] for r in tier_results) / len(tier_results)
+                t_line = sum(r["line_coverage"] for r in tier_results) / len(tier_results)
+                t_branch = sum(r["branch_coverage"] for r in tier_results) / len(tier_results)
                 print(f"\n  {tier} ({len(tier_results)} functions):")
-                print(f"    quality={t_quality:.3f}, mutation={t_mutation:.1%}, llm_mutation={t_llm:.1%}")
+                print(f"    quality={t_quality:.3f}, mutation={t_mutation:.1%}, llm_mutation={t_llm:.1%}, "
+                      f"line={t_line:.1%}, branch={t_branch:.1%}")
 
         min_quality = min(r["quality_score"] for r in ok_results)
         max_quality = max(r["quality_score"] for r in ok_results)
@@ -173,7 +179,7 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output/benchmark", limit
 if __name__ == "__main__":
     p = argparse.ArgumentParser(description="Run benchmark suite")
     p.add_argument("--benchmark", default="data/benchmark_functions.json", help="Benchmark functions file")
-    p.add_argument("--output", default="eval_output/benchmark", help="Output directory")
+    p.add_argument("--output", default="eval_output", help="Output directory")
     p.add_argument("--limit", type=int, default=0, help="Limit number of functions (0 = all)")
     args = p.parse_args()
     run_benchmark(args.benchmark, args.output, args.limit)

@@ -5,7 +5,7 @@ Executes the generated test files against the original repo and writes results.j
 Use this after the main pipeline to see how many tests pass/fail.
 
 Usage:
-    uv run python -m src.runner --output ./outputs/algorithms
+    uv run python -m src.runner --output ./eval_output/algorithms
 
 Output: <output_dir>/results.json with pass/fail/error counts per function per test type.
 """
@@ -160,7 +160,7 @@ def run_tests(output_dir):
 
 
 if __name__ == "__main__":
-    output = "./outputs/algorithms"
+    output = "./eval_output/algorithms"
     for arg in sys.argv[1:]:
         if arg.startswith("--output="):
             output = arg.split("=", 1)[1]
