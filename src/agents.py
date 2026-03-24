@@ -26,6 +26,24 @@ def get_llm(config):
     return ChatOpenAI(**kwargs)
 
 
+def get_supervisor_llm(config):
+    sup = config["supervisor"]
+    if sup["provider"]:
+        effective = {
+            "provider": sup["provider"],
+            "model": sup["model"],
+            "base_url": sup["base_url"],
+            "api_key_env": sup["api_key_env"],
+        }
+    else:
+        effective = dict(config["llm"])
+    from src.config import _apply_provider_defaults
+    effective_config = {"llm": effective}
+    _apply_provider_defaults(effective_config)
+    llm = get_llm(effective_config)
+    return llm
+
+
 def build_user_message(fn):
     msg = f"## Function: `{fn['name']}`\n"
     msg += f"**Language:** {fn['language']}\n"

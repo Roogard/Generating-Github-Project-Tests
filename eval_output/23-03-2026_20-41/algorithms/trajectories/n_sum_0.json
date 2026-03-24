@@ -1,0 +1,94 @@
+{
+  "function_info": {
+    "name": "n_sum",
+    "file_path": "algorithms\\array\\n_sum.py",
+    "language": "python"
+  },
+  "index": 0,
+  "generated_tests": {
+    "bva": "import pytest\nfrom algorithms.array.n_sum import _two_sum\n\ndef test_two_sum_empty_list():\n    # Boundary: empty nums list\n    nums = []\n    target = 5\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == []\n\ndef test_two_sum_single_element():\n    # Boundary: single element list (cannot form a pair)\n    nums = [3]\n    target = 3\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == []\n\ndef test_two_sum_two_elements_matching():\n    # Boundary: minimum list length to form a pair (success)\n    nums = [1, 2]\n    target = 3\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == [[1, 2]]\n\ndef test_two_sum_two_elements_not_matching():\n    # Boundary: minimum list length to form a pair (failure)\n    nums = [1, 2]\n    target = 4\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == []\n\ndef test_two_sum_all_identical_matching():\n    # Boundary: all elements identical and match target\n    nums = [5, 5, 5, 5]\n    target = 10\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == [[5, 5]]\n\ndef test_two_sum_all_identical_not_matching():\n    # Boundary: all elements identical and do not match target\n    nums = [5, 5, 5, 5]\n    target = 11\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == []\n\ndef test_two_sum_negative_numbers():\n    # Boundary: negative target and numbers\n    nums = [-5, -3, -1, 0, 2, 4]\n    target = -4\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == [[-5, 1]]\n\ndef test_two_sum_zero_target():\n    # Boundary: target is zero\n    nums = [-2, -1, 0, 1, 2]\n    target = 0\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert sorted(result) == [[-2, 2], [-1, 1]]\n\ndef test_two_sum_large_numbers():\n    # Boundary: large integers\n    nums = [10**6, 10**6 + 1, 10**6 + 2]\n    target = 2 * 10**6 + 1\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == [[10**6, 10**6 + 1]]\n\ndef test_two_sum_duplicate_pairs():\n    # Boundary: duplicate pairs due to duplicate values\n    nums = [1, 1, 2, 2, 3, 3]\n    target = 4\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == [[1, 3], [2, 2]]\n\ndef test_two_sum_custom_closure_operations():\n    # Boundary: custom closures (non-numeric operations)\n    nums = ['a', 'b', 'c', 'd']\n    target = 'ab'\n    sum_closure = lambda x, y: x + y\n    compare_closure = lambda x, y: -1 if x < y else (1 if x > y else 0)\n    same_closure = lambda x, y: x == y\n    result = _two_sum(nums, target, sum_closure, compare_closure, same_closure)\n    assert result == [['a', 'b']]"
+  },
+  "test_results": {
+    "bva": {
+      "passed": [],
+      "failed": [],
+      "errors": [
+        "__collection_error__"
+      ],
+      "stdout": "\n=================================== ERRORS ====================================\n_ ERROR collecting eval_output/23-03-2026_20-41/algorithms/test_cases/n_sum_0/test_bva.py _\nImportError while importing test module 'C:\\Users\\the4r\\OneDrive\\Desktop\\projects\\Generating-Github-Project-Tests\\eval_output\\23-03-2026_20-41\\algorithms\\test_cases\\n_sum_0\\test_bva.py'.\nHint: make sure your test modules/packages have valid Python names.\nTraceback:\n..\\..\\..\\..\\AppData\\Roaming\\uv\\python\\cpython-3.13.5-windows-x86_64-none\\Lib\\importlib\\__init__.py:88: in import_module\n    return _bootstrap._gcd_import(name[level:], package, level)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\neval_output\\23-03-2026_20-41\\algorithms\\test_cases\\n_sum_0\\test_bva.py:2: in <module>\n    from algorithms.array.n_sum import _two_sum\nE   ImportError: cannot import name '_two_sum' from 'algorithms.array.n_sum' (C:\\Users\\the4r\\AppData\\Local\\Temp\\tmp1rm_t4ti\\algorithms\\array\\n_sum.py)\n=========================== short test summary info ===========================\nERROR eval_output/23-03-2026_20-41/algorithms/test_cases/n_sum_0/test_bva.py\n!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!\n1 error in 0.54s\n",
+      "stderr": "",
+      "returncode": 2
+    }
+  },
+  "mutation_score": 0.0,
+  "mutant_count": 0,
+  "agent_kills": {},
+  "survived_mutants": [],
+  "killed_mutants": [],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_bva_tests",
+      "outcome": "generated 4364 chars",
+      "reasoning": "Since no tests have been generated yet and the current quality metrics are at zero, generating boundary value analysis (BVA) tests is a good starting point. BVA is particularly effective in identifying edge cases in functions like n_sum, where the behavior at the boundaries of input ranges often reveals critical information about the function's correctness."
+    },
+    {
+      "step": 2,
+      "action": "run_tests",
+      "outcome": "0 passed, 0 failed, 1 errors",
+      "reasoning": "I have generated boundary value analysis (BVA) tests, but I need to run the tests to get results before taking further action. This will help us evaluate the current state of the function."
+    },
+    {
+      "step": 3,
+      "action": "fix_tests",
+      "outcome": "fixed 1 test types",
+      "reasoning": "The generated BVA tests resulted in errors, indicating that there may be issues with the test cases or the function itself. Fixing these tests is necessary to achieve passing tests, which will allow us to measure coverage and proceed with mutation testing."
+    },
+    {
+      "step": 4,
+      "action": "run_tests",
+      "outcome": "0 passed, 0 failed, 1 errors",
+      "reasoning": "I have fixed the previously generated boundary value analysis tests, so I will run the tests again to see if the fixes resolved the errors and to check if any tests pass."
+    },
+    {
+      "step": 5,
+      "action": "fix_tests",
+      "outcome": "fixed 1 test types",
+      "reasoning": "The generated BVA tests had errors in the previous run, so I need to fix the tests to ensure they can pass. The quality metrics remain very low, indicating that we need to address the underlying issues before attempting any further testing."
+    },
+    {
+      "step": 6,
+      "action": "stop",
+      "outcome": "stopped",
+      "reasoning": "After two attempts to fix the tests, there are still errors present without any passing tests. This indicates that the function may be untestable at this point."
+    }
+  ],
+  "step_count": 6,
+  "done": true,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 2,
+  "line_coverage": 0.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {},
+  "assertion_density": 0.3333333333333333,
+  "test_diversity": 0.0,
+  "quality_score": 0.0,
+  "llm_mutation_score": 0.0,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [],
+  "grpo_rewards": {
+    "mutation": 0.0,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.0,
+    "test_diversity": 0.0,
+    "unique_kills_ratio": 0.0,
+    "llm_mutation": 0.0,
+    "quality_score": 0.0
+  }
+}

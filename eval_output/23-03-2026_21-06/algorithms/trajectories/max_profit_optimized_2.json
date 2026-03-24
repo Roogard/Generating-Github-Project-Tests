@@ -1,0 +1,307 @@
+{
+  "function_info": {
+    "name": "max_profit_optimized",
+    "file_path": "algorithms\\dynamic_programming\\buy_sell_stock.py",
+    "language": "python"
+  },
+  "index": 2,
+  "generated_tests": {
+    "condition": "from algorithms.dynamic_programming.buy_sell_stock import max_profit_optimized\n\n# condition: cur_max + prices[i] - prices[i-1] > 0: True\n# condition: cur_max + prices[i] - prices[i-1] > 0: False\ndef test_profit_increase_positive_difference():\n    # cur_max + prices[i] - prices[i-1] > 0 becomes True, cur_max becomes positive\n    # cur_max + prices[i] - prices[i-1] > 0 becomes False, cur_max becomes 0\n    # This test includes both True and False across iterations\n    # Iteration 1 (i=1): cur_max + (5-1)=4 > 0 \u2192 True, cur_max=4\n    # Iteration 2 (i=2): cur_max + (3-5)=2 > 0 \u2192 True, cur_max=2\n    # Iteration 3 (i=3): cur_max + (6-3)=5 > 0 \u2192 True, cur_max=5\n    # Iteration 4 (i=4): cur_max + (4-6)=3 > 0 \u2192 True, cur_max=3\n    assert max_profit_optimized([1, 5, 3, 6, 4]) == 5\n\n# condition: cur_max + prices[i] - prices[i-1] > 0: False (all iterations)\ndef test_no_profit_decreasing_prices():\n    # All differences negative, cur_max + prices[i] - prices[i-1] <= 0 \u2192 False\n    # cur_max becomes 0 each iteration\n    assert max_profit_optimized([7, 6, 4, 3, 1]) == 0\n\n# condition: cur_max + prices[i] - prices[i-1] > 0: True then False\ndef test_profit_then_loss():\n    # Iteration 1 (i=1): cur_max + (5-2)=3 > 0 \u2192 True, cur_max=3\n    # Iteration 2 (i=2): cur_max + (1-5)=-1 > 0 \u2192 False, cur_max=0\n    # Iteration 3 (i=3): cur_max + (4-1)=3 > 0 \u2192 True, cur_max=3\n    assert max_profit_optimized([2, 5, 1, 4]) == 3\n\n# condition: cur_max + prices[i] - prices[i-1] > 0: False then True\ndef test_loss_then_profit():\n    # Iteration 1 (i=1): cur_max + (3-5)=-2 > 0 \u2192 False, cur_max=0\n    # Iteration 2 (i=2): cur_max + (8-3)=5 > 0 \u2192 True, cur_max=5\n    assert max_profit_optimized([5, 3, 8]) == 5\n\n# condition: cur_max + prices[i] - prices[i-1] > 0: True (single iteration)\ndef test_single_profit_pair():\n    # Only one iteration: cur_max + (6-1)=5 > 0 \u2192 True, cur_max=5\n    assert max_profit_optimized([1, 6]) == 5\n\n# condition: cur_max + prices[i] - prices[i-1] > 0: False (single iteration)\ndef test_single_loss_pair():\n    # Only one iteration: cur_max + (1-6)=-5 > 0 \u2192 False, cur_max=0\n    assert max_profit_optimized([6, 1]) == 0\n\n# Edge case: empty or single price list (no iterations, no conditions evaluated)\ndef test_empty_list():\n    # No loop iterations, no conditions\n    assert max_profit_optimized([]) == 0\n\ndef test_single_price():\n    # No loop iterations, no conditions\n    assert max_profit_optimized([5]) == 0",
+    "bva": "import pytest\nfrom algorithms.dynamic_programming.buy_sell_stock import max_profit_optimized\n\ndef test_empty_list():\n    assert max_profit_optimized([]) == 0\n\ndef test_single_price():\n    assert max_profit_optimized([5]) == 0\n\ndef test_two_prices_increasing():\n    assert max_profit_optimized([1, 2]) == 1\n\ndef test_two_prices_decreasing():\n    assert max_profit_optimized([2, 1]) == 0\n\ndef test_two_prices_equal():\n    assert max_profit_optimized([3, 3]) == 0\n\ndef test_minimum_possible_price():\n    assert max_profit_optimized([0, 1]) == 1\n\ndef test_maximum_possible_price():\n    assert max_profit_optimized([10**4, 10**4 + 1]) == 1\n\ndef test_all_decreasing():\n    assert max_profit_optimized([5, 4, 3, 2, 1]) == 0\n\ndef test_all_increasing():\n    assert max_profit_optimized([1, 2, 3, 4, 5]) == 4\n\ndef test_profit_at_end():\n    assert max_profit_optimized([3, 2, 1, 2, 3]) == 2\n\ndef test_profit_at_start():\n    assert max_profit_optimized([1, 5, 4, 3, 2]) == 4\n\ndef test_large_price_fluctuation():\n    assert max_profit_optimized([2, 10, 1, 5]) == 8\n\ndef test_multiple_peaks():\n    assert max_profit_optimized([1, 5, 3, 8, 2, 10]) == 9\n\ndef test_zero_profit_constant_prices():\n    assert max_profit_optimized([7, 7, 7, 7]) == 0\n\ndef test_single_day_drop_then_rise():\n    assert max_profit_optimized([10, 1, 10]) == 9\n\ndef test_minimum_length_list_with_profit():\n    assert max_profit_optimized([0, 100]) == 100\n\ndef test_minimum_length_list_without_profit():\n    assert max_profit_optimized([100, 0]) == 0\n\ndef test_alternating_prices():\n    assert max_profit_optimized([1, 3, 2, 4, 3, 5]) == 4",
+    "ecp": "import pytest\nfrom algorithms.dynamic_programming.buy_sell_stock import max_profit_optimized\n\n# Valid equivalence class: list with increasing prices (profit > 0)\ndef test_valid_increasing_prices():\n    assert max_profit_optimized([1, 2, 3, 4, 5]) == 4\n\n# Valid equivalence class: list with decreasing prices (profit = 0)\ndef test_valid_decreasing_prices():\n    assert max_profit_optimized([5, 4, 3, 2, 1]) == 0\n\n# Valid equivalence class: list with single price (profit = 0)\ndef test_valid_single_price():\n    assert max_profit_optimized([10]) == 0\n\n# Valid equivalence class: list with equal prices (profit = 0)\ndef test_valid_equal_prices():\n    assert max_profit_optimized([3, 3, 3, 3]) == 0\n\n# Valid equivalence class: list with mixed prices and profit in middle\ndef test_valid_mixed_prices():\n    assert max_profit_optimized([7, 1, 5, 3, 6, 4]) == 5\n\n# Valid equivalence class: list with profit at end\ndef test_valid_profit_at_end():\n    assert max_profit_optimized([1, 2, 1, 3]) == 2\n\n# Valid equivalence class: list with profit at start\ndef test_valid_profit_at_start():\n    assert max_profit_optimized([1, 5, 2, 3]) == 4\n\n# Invalid equivalence class: empty list\ndef test_invalid_empty_list():\n    with pytest.raises(IndexError):\n        max_profit_optimized([])\n\n# Invalid equivalence class: list with non-integer element (string)\ndef test_invalid_non_integer_string():\n    with pytest.raises(TypeError):\n        max_profit_optimized([1, 2, \"3\"])\n\n# Invalid equivalence class: list with non-integer element (float)\ndef test_invalid_non_integer_float():\n    with pytest.raises(TypeError):\n        max_profit_optimized([1, 2.5, 3])\n\n# Invalid equivalence class: None input\ndef test_invalid_none_input():\n    with pytest.raises(TypeError):\n        max_profit_optimized(None)"
+  },
+  "test_results": {
+    "condition": {
+      "passed": [
+        "test_profit_increase_positive_difference",
+        "test_no_profit_decreasing_prices",
+        "test_profit_then_loss",
+        "test_loss_then_profit",
+        "test_single_profit_pair",
+        "test_single_loss_pair",
+        "test_empty_list",
+        "test_single_price"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "........                                                                 [100%]\n8 passed in 0.20s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "bva": {
+      "passed": [
+        "test_empty_list",
+        "test_single_price",
+        "test_two_prices_increasing",
+        "test_two_prices_decreasing",
+        "test_two_prices_equal",
+        "test_minimum_possible_price",
+        "test_maximum_possible_price",
+        "test_all_decreasing",
+        "test_all_increasing",
+        "test_profit_at_end",
+        "test_profit_at_start",
+        "test_large_price_fluctuation",
+        "test_multiple_peaks",
+        "test_zero_profit_constant_prices",
+        "test_single_day_drop_then_rise",
+        "test_minimum_length_list_with_profit",
+        "test_minimum_length_list_without_profit",
+        "test_alternating_prices"
+      ],
+      "failed": [],
+      "errors": [],
+      "stdout": "..................                                                       [100%]\n18 passed in 0.22s\n",
+      "stderr": "",
+      "returncode": 0
+    },
+    "ecp": {
+      "passed": [
+        "test_valid_increasing_prices",
+        "test_valid_decreasing_prices",
+        "test_valid_single_price",
+        "test_valid_equal_prices",
+        "test_valid_mixed_prices",
+        "test_valid_profit_at_end",
+        "test_valid_profit_at_start",
+        "test_invalid_non_integer_string",
+        "test_invalid_none_input"
+      ],
+      "failed": [
+        "test_invalid_empty_list",
+        "test_invalid_non_integer_float"
+      ],
+      "errors": [],
+      "stdout": ".......F.F.                                                              [100%]\n================================== FAILURES ===================================\n___________________________ test_invalid_empty_list ___________________________\neval_output\\23-03-2026_21-06\\algorithms\\test_cases\\max_profit_optimized_2\\test_ecp.py:34: in test_invalid_empty_list\n    with pytest.raises(IndexError):\n         ^^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE <class 'IndexError'>\n_______________________ test_invalid_non_integer_float ________________________\neval_output\\23-03-2026_21-06\\algorithms\\test_cases\\max_profit_optimized_2\\test_ecp.py:44: in test_invalid_non_integer_float\n    with pytest.raises(TypeError):\n         ^^^^^^^^^^^^^^^^^^^^^^^^\nE   Failed: DID NOT RAISE <class 'TypeError'>\n=========================== short test summary info ===========================\nFAILED eval_output/23-03-2026_21-06/algorithms/test_cases/max_profit_optimized_2/test_ecp.py::test_invalid_empty_list\nFAILED eval_output/23-03-2026_21-06/algorithms/test_cases/max_profit_optimized_2/test_ecp.py::test_invalid_non_integer_float\n2 failed, 9 passed in 0.76s\n",
+      "stderr": "",
+      "returncode": 1
+    }
+  },
+  "mutation_score": 0.08333333333333333,
+  "mutant_count": 12,
+  "agent_kills": {
+    "condition": [],
+    "bva": [],
+    "ecp": [
+      12
+    ]
+  },
+  "survived_mutants": [
+    {
+      "id": 1,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 18"
+    },
+    {
+      "id": 2,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 18"
+    },
+    {
+      "id": 3,
+      "tag": "arith_swap",
+      "description": "arith_swap at line 18"
+    },
+    {
+      "id": 4,
+      "tag": "zero_iter",
+      "description": "zero_iter at line 17"
+    },
+    {
+      "id": 5,
+      "tag": "llm_mutant",
+      "description": "off-by-one: loop starts from index 0 instead of 1, causing index error on prices[i-1]"
+    },
+    {
+      "id": 6,
+      "tag": "llm_mutant",
+      "description": "wrong variable: uses prices[i] - prices[i] instead of prices[i] - prices[i-1], always resulting in 0 profit"
+    },
+    {
+      "id": 7,
+      "tag": "llm_mutant",
+      "description": "wrong comparison: uses min instead of max for cur_max calculation, always taking the worst local profit"
+    },
+    {
+      "id": 8,
+      "tag": "llm_mutant",
+      "description": "wrong variable: returns cur_max instead of max_so_far, only returning the last local maximum"
+    },
+    {
+      "id": 9,
+      "tag": "llm_mutant",
+      "description": "off-by-sign: subtracts prices[i-1] from cur_max instead of adding it, reversing the profit calculation"
+    },
+    {
+      "id": 10,
+      "tag": "llm_mutant",
+      "description": "incorrect default: initializes cur_max to prices[0] instead of 0, skewing the profit calculation"
+    },
+    {
+      "id": 11,
+      "tag": "llm_mutant",
+      "description": "wrong comparison: uses <= instead of < in loop range, causing index out of bounds on last iteration"
+    }
+  ],
+  "killed_mutants": [
+    {
+      "id": 12,
+      "tag": "llm_mutant",
+      "description": "logic inversion: flips the subtraction order to prices[i-1] - prices[i], calculating losses instead of profits"
+    }
+  ],
+  "history": [
+    {
+      "step": 1,
+      "action": "generate_condition_tests",
+      "outcome": "generated 2872 chars",
+      "reasoning": "The function 'max_profit_optimized' likely involves conditions related to stock prices and trading days. Generating condition tests will help to evaluate these scenarios thoroughly, capturing edge cases and ensuring conditions are properly assessed."
+    },
+    {
+      "step": 2,
+      "action": "run_tests",
+      "outcome": "8 passed, 0 failed, 0 errors",
+      "reasoning": "I generated condition tests to check various logical conditions in the function 'max_profit_optimized.' Running the tests now will determine if they pass and provide insight into mutation survivability, coverage metrics, and any required fixes."
+    },
+    {
+      "step": 3,
+      "action": "run_mutation_testing",
+      "outcome": "0/12 killed (0.0%), llm=0.0%, quality=0.06",
+      "reasoning": "Since there are no errors or failures in the tests, it is now the right time to run mutation testing. This action will help us evaluate the effectiveness of our existing tests by checking how many mutants they can kill. With a mutation score, we can better assess the quality of the tests and identify if there are weaknesses or survived mutants that we need to address."
+    },
+    {
+      "step": 4,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1368 chars",
+      "reasoning": "The function `max_profit_optimized` likely involves calculations that are sensitive to the input values, such as prices of stocks over time. Generating Boundary Value Analysis (BVA) tests will help test the edge cases of these inputs, such as minimum and maximum values, which could reveal faults in situations that regular tests may not cover. Considering the low mutation score and absence of killed mutants indicates the need for more diverse test cases to improve coverage and quality score."
+    },
+    {
+      "step": 5,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1740 chars",
+      "reasoning": "Given that the current actions (condition and BVA tests) resulted in zero mutation coverage and no unique kills, it is important to generate equivalence class partitioning (ECP) tests, as they will help identify distinct scenarios based on the input data. This approach will create additional test cases that can capture edge cases and different input patterns, potentially resulting in higher mutation kills and better coverage."
+    },
+    {
+      "step": 6,
+      "action": "refine_tests",
+      "outcome": "refined 3 agents",
+      "reasoning": "After running mutation testing, it was revealed that our tests failed to kill any mutants. Given the presence of survived mutants, refining our tests based on their descriptions should help us cover the weaknesses in our current test suite and potentially increase our mutation score."
+    },
+    {
+      "step": 7,
+      "action": "run_tests",
+      "outcome": "69 passed, 1 failed, 0 errors",
+      "reasoning": "After refining the tests to focus on the survivors from the mutation testing, I need to execute the refined tests to check for passing results. This will help determine if the adjustments made are effective in detecting mutant behavior."
+    },
+    {
+      "step": 8,
+      "action": "run_mutation_testing",
+      "outcome": "0/12 killed (0.0%), llm=0.0%, quality=0.05",
+      "reasoning": "With 69 passing tests (1 failure) and survivors from earlier mutation testing, it's now ideal to run mutation testing again to assess the improvements from refined tests and gather a new mutation score."
+    },
+    {
+      "step": 9,
+      "action": "fix_tests",
+      "outcome": "fixed 1 test types",
+      "reasoning": "The recent run of tests indicated that there was one failure among the tests generated. Given that fixing the failed test can help improve overall test quality and potentially increase the mutation score, it's critical to address this issue now."
+    },
+    {
+      "step": 10,
+      "action": "run_mutation_testing",
+      "outcome": "0/12 killed (0.0%), llm=0.0%, quality=0.05",
+      "reasoning": "After fixing the tests, it is crucial to determine if the changes led to any improvements in the mutation score. Running mutation testing will help assess the effectiveness of the updated tests on the remaining survived mutants."
+    },
+    {
+      "step": 11,
+      "action": "generate_condition_tests",
+      "outcome": "generated 2424 chars",
+      "reasoning": "The previous tests generated and refined did not yield any killed mutants, indicating that the current test coverage is insufficient. By generating additional condition tests, I can target the logical branches of the function more effectively, hopefully exposing some of the surviving mutants and increasing the mutation score."
+    },
+    {
+      "step": 12,
+      "action": "run_tests",
+      "outcome": "57 passed, 0 failed, 0 errors",
+      "reasoning": "I have generated additional condition tests which aim to explore different logical scenarios in the function 'max_profit_optimized'. Given the previous results showed one failure, running the tests again will help verify the fixes made and evaluate overall robustness."
+    },
+    {
+      "step": 13,
+      "action": "run_mutation_testing",
+      "outcome": "0/12 killed (0.0%), llm=0.0%, quality=0.05",
+      "reasoning": "With 57 tests passing and no clear indication of failures or errors, it is time to conduct mutation testing again. This will provide insights into the effectiveness of the current set of tests and help identify any surviving mutants that need further attention."
+    },
+    {
+      "step": 14,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1668 chars",
+      "reasoning": "The current tests have not led to killing any mutants and coverage remains at 0. I will generate boundary value tests as they can expose edge cases, potentially revealing flaws in the function under test. This could lead towards improving not just the mutation score but also provide new assertions that could enhance the quality metrics."
+    },
+    {
+      "step": 15,
+      "action": "run_mutation_testing",
+      "outcome": "1/12 killed (8.3%), llm=0.0%, quality=0.10",
+      "reasoning": "After generating new BVA tests, I need to run mutation testing again to see if the new tests can detect any of the survived mutants that were previously observed. The goal is to improve the mutation score and discover any weaknesses in the current test suite."
+    },
+    {
+      "step": 16,
+      "action": "generate_ecp_tests",
+      "outcome": "generated 1779 chars",
+      "reasoning": "The current state shows that mutation testing only killed 1 out of 12 mutants, indicating that existing tests are not covering critical edge cases. Generating ECP (Equivalence Class Partitioning) tests can help identify additional scenarios that current tests may not cover, especially edge cases related to stock price variations. These tests can improve mutation scores and overall quality."
+    },
+    {
+      "step": 17,
+      "action": "run_tests",
+      "outcome": "35 passed, 2 failed, 0 errors",
+      "reasoning": "I have generated new ECP tests to explore different edge cases for the function, but the mutation testing results remain low. It's crucial to run the tests now to evaluate their effectiveness and see if they can help improve the mutation score or provide better coverage."
+    },
+    {
+      "step": 18,
+      "action": "run_mutation_testing",
+      "outcome": "1/12 killed (8.3%), llm=12.5%, quality=0.09",
+      "reasoning": "The last set of tests included a mix of conditions, BVA, and ECP tests, but they still did not result in a significant mutation score improvement. Running mutation testing again is necessary to identify any remaining survived mutants and get insights into potential weaknesses in the current tests."
+    },
+    {
+      "step": 19,
+      "action": "generate_bva_tests",
+      "outcome": "generated 1596 chars",
+      "reasoning": "The previous tests have shown a low mutation score and did not yield significant improvements. Given that we have 11 survived mutants, focusing on boundary value analysis is a systematic choice to identify critical edge cases that may lead to uncovering issues in the logic of the `max_profit_optimized` function. This might help to improve both the mutation score and the quality score."
+    },
+    {
+      "step": 20,
+      "action": "run_tests",
+      "outcome": "35 passed, 2 failed, 0 errors",
+      "reasoning": "I generated new boundary value analysis tests, which should provide a different perspective on the function's behavior across crucial points in data, potentially leading to passing tests and improved coverage. Testing various boundary scenarios is critical in maximizing the quality of the tests."
+    }
+  ],
+  "step_count": 20,
+  "done": false,
+  "planned_generates": [
+    "bva",
+    "condition",
+    "ecp",
+    "path"
+  ],
+  "fix_attempts": 1,
+  "line_coverage": 0.0,
+  "branch_coverage": 0.0,
+  "unique_kills": {
+    "condition": 0,
+    "bva": 0,
+    "ecp": 1
+  },
+  "assertion_density": 0.2972972972972973,
+  "test_diversity": 0.06666666666666667,
+  "quality_score": 0.0929,
+  "llm_mutation_score": 0.125,
+  "missing_lines": [],
+  "missing_branches": [],
+  "score_history": [],
+  "grpo_rewards": {
+    "mutation": 0.08333333333333333,
+    "branch_coverage": 0.0,
+    "assertion_density": 0.0,
+    "test_diversity": 0.06666666666666667,
+    "unique_kills_ratio": 0.08333333333333333,
+    "llm_mutation": 0.125,
+    "quality_score": 0.0
+  }
+}

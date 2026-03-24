@@ -190,70 +190,69 @@ def step(state, action):
 
 Each action handler calls existing module functions directly. No new abstractions.
 
-## 5. Supervisor Policy
+## 5. LLM Supervisor
 
-```python
-def supervisor_policy(state):
-    history_actions = [h["action"] for h in state["history"]]
-    has_tests = bool(state["generated_tests"])
-    has_test_results = bool(state["test_results"])
-    has_mutation = state["mutant_count"] > 0
-    mutation_score = state["mutation_score"]
-    refine_count = history_actions.count("refine_tests")
-```
+The supervisor is an LLM that picks one action per step using tool calling. It replaces the previous heuristic policy.
 
-Decision logic, evaluated in order:
+### Architecture (single-turn per step)
 
-1. **Planned generates remaining** → return next `generate_X_tests` not yet in `generated_tests`.
-2. **Tests need running** (never run, or fixed/refined/regenerated since last run) → return `run_tests`.
-3. **Tests have errors or failures AND `fix_attempts < 2`** → return `fix_tests`. Loops back to step 2.
-4. **Mutation testing needed** (never run, or re-run needed after changes) → return `run_mutation_testing`.
-5. **Coverage not yet measured** (or re-run needed) → return `run_coverage`.
-6. **Composite quality score >= 0.80** → return `stop`. Quality score = 0.5*mutation + 0.25*branch + 0.15*assertion_density + 0.10*test_diversity.
-7. **Agent has 0 unique kills AND quality < 0.80** → return `generate_{weak_agent}_tests`. Loops back to step 2.
-8. **Branch coverage < 0.90 AND haven't run coverage-guided generation yet** → return `generate_coverage_tests`. Loops back to step 2.
-9. **Refined fewer than 3 times** → return `refine_tests`. If `score_history` shows < 2% improvement between last two measurements, return `stop` instead (diminishing returns). Loops back to step 2.
-10. **Otherwise** → return `stop`.
+Each step is a fresh LLM call:
+1. Build system prompt (role + strategy guide + quality formula + memory context)
+2. Build user message (serialized current state — metrics, history, survived mutants, etc.)
+3. Call LLM with `bind_tools(tools, tool_choice="any")` — forces exactly one tool call
+4. Extract tool name → action string, extract `reasoning` arg → logged in trajectory
+5. Pass action + reasoning to `step(state, action, reasoning)` — unchanged dispatch
 
-The policy is pure heuristics — no LLM call. Fast and deterministic.
+The state already contains full `history` (all past actions, outcomes, and reasoning), so no multi-turn conversation is needed. Context stays bounded.
+
+### Tool Definitions
+
+Each action is a LangChain tool. Every tool takes a `reasoning: str` parameter — the LLM must explain why it chose this action. Test type tools (`generate_X_tests`) are built dynamically from auto-discovered prompts.
+
+### Memory Integration
+
+Before the loop, `run_harness()` fetches memory context:
+- `retrieve_similar(collection, fn, k=5)` — similar functions + their agent performance
+- `get_reflections(db, limit=10)` — lessons learned from past batches
+- `format_memory_context(...)` — formats into markdown injected into the system prompt
+
+Fetched once per function (static for the duration of the harness run).
+
+### Supervisor Config
+
+Separate `[supervisor]` config section — defaults to the main `[llm]` settings but can use a different model (e.g., stronger model for supervision, cheaper for generation). Set via `ghtest.toml`, env vars (`SUPERVISOR_PROVIDER`, `SUPERVISOR_MODEL`), or CLI (`--supervisor-provider`, `--supervisor-model`).
+
+### Error Handling
+
+If the LLM fails (network error, no tool call, invalid action name), `llm_supervisor()` returns `(None, None)`. The loop skips that iteration without burning a step. After 3 consecutive errors, the loop stops.
 
 ## 6. Iterative Loop
 
 ```python
-def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=20):
-    state = make_initial_state(fn, index, output_dir, repo_clone_dir)
+def run_harness(fn, index, output_dir, repo_clone_dir, config, max_steps=None):
+    state = make_initial_state(fn, index, output_dir, repo_clone_dir, config)
+
+    # fetch memory context once before the loop
+    memory_context = _fetch_memory_context(fn, state["planned_generates"])
 
     for i in range(max_steps):
-        action = supervisor_policy(state)
-        print(f"  [{fn['name']}] step {i+1}: {action}")
-        state = step(state, action)
+        action, reasoning = llm_supervisor(state, memory_context)
+        if action is None:
+            continue  # skip on error, retry next iteration
+        state = step(state, action, reasoning)
         if state["done"]:
             break
 
+    _save_trajectory(state)
     return state
 ```
 
 **Stopping conditions:**
-- `quality_score >= 0.80` — tests are good enough (composite of mutation, coverage, assertion density, diversity)
+- The LLM calls `stop` — it decides tests are good enough or further improvement is unlikely
 - `max_steps` reached (default 20) — budget exhausted
-- Three refinement cycles completed or diminishing returns (< 2% improvement between coverage measurements) — stop to avoid infinite loops
+- 3 consecutive supervisor errors — LLM is not responding
 
-**Trajectory logging:** After each run, the full state is serialized to `{output_dir}/trajectories/{fn_name}_{index}.json` for offline analysis and future RL/DPO training.
-
-**Typical run (10–20 steps):**
-1. `generate_bva_tests`
-2. `generate_ecp_tests`
-3. `generate_path_tests`
-4. `generate_condition_tests`
-5. `run_tests`
-6. `fix_tests` (if errors/failures exist)
-7. `run_tests` (re-run after fix)
-8. `run_mutation_testing`
-9. `run_coverage`
-10. If score >= 0.80: `stop` (done in 10 steps)
-11. If score < 0.80 and weak agent: `generate_X_tests` → `run_tests` → `run_mutation_testing` → `run_coverage`
-12. If branch_coverage < 0.90: `generate_coverage_tests` → `run_tests` → `run_mutation_testing` → `run_coverage`
-13. If still < 0.80: `refine_tests` → `run_tests` → `run_mutation_testing` → `run_coverage` (up to 3 cycles, stops on < 2% improvement)
+**Trajectory logging:** After each run, the full state (including reasoning per step) is serialized to `{output_dir}/trajectories/{fn_name}_{index}.json` for offline analysis and future RL/GRPO training.
 
 ## 7. Design Constraints
 
@@ -264,19 +263,14 @@ def run_harness(fn, index, output_dir, repo_clone_dir, max_steps=20):
 - `os.walk` / `os.path`, not pathlib (except where libraries require Path)
 - Minimal helper functions — inline the logic
 - Reuse `call_agent`, `run_all_agents`, `run_single_test`, `write_tests`, `compute_unique_kills` directly
-- No RL yet — heuristic supervisor policy only
-- One refinement cycle max for v1
+- LLM supervisor via tool calling — no heuristic fallback
 - Test agents auto-discovered from `src/prompts/`, overridable via config
 
 ## 8. Future Extensions
 
-- **LLM-based supervisor policy** — replace heuristic with LLM call that takes serialized state and returns action string. Step function and action space stay identical.
 - **GRPO optimization** — trajectory logs contain `grpo_rewards` dicts with 7 channels. For GRPO training: use the multi-channel dict, NOT the collapsed `quality_score`. GRPO normalizes rewards within groups via z-score — passing a single compressed scalar (where all runs score 0.81–0.84) produces near-zero advantages and zero gradients. Instead, pass individual channels (mutation, branch_coverage, etc.) so GRPO can normalize each independently. See: *From Absolute to Relative* (2601.23058) and *Mind the Gap* (2309.02395).
-- **Multi-cycle refinement** — remove the one-cycle cap. Add diminishing-returns detection (if score improved < 2% on last cycle, stop).
-- **Coverage-guided generation** — `run_coverage` already collects data; add `generate_coverage_tests` action that feeds uncovered lines into a coverage-targeted prompt.
-- **Memory-informed supervisor** — connect ChromaDB `retrieve_similar()` to supervisor policy to deprioritize agents with historically 0 unique kills on similar functions.
-- **Test oracle export** — consolidate strongest tests into a single oracle file usable by code repair tools (SWE-agent, OpenHands).
 - **DSPy prompt optimization** — optimize `refine.md` prompt after ~50 labeled examples.
+- **Test oracle export** — consolidate strongest tests into a single oracle file usable by code repair tools (SWE-agent, OpenHands).
 - **Trajectory analysis** — aggregate statistics across 50+ trajectory logs to data-drive prompt engineering and supervisor tuning.
 
 ## Commands
@@ -303,9 +297,10 @@ Copy `.env.example` to `.env` and fill in your API key before running locally.
 src/
 ├── main.py          # entry point + CLI args
 ├── config.py        # config loader (ghtest.toml + env vars + CLI)
-├── harness.py       # state, step function, supervisor policy, loop
+├── harness.py       # state, step function, LLM supervisor (tool calling), loop
+├── skills.py        # action handlers (generate, run, fix, refine, coverage, mutate, stop) + dispatch
 ├── extractor.py     # clone repo + tree-sitter function extraction
-├── agents.py        # LLM factory + call_agent + call_agent_with_context
+├── agents.py        # LLM factory + call_agent + call_agent_with_context + get_supervisor_llm
 ├── memory.py        # ChromaDB memory: store results, retrieve similar, reflexions
 ├── writer.py        # write output folders
 ├── runner.py        # execute generated tests with pytest
@@ -340,6 +335,11 @@ max_steps = 20
 max_fix_attempts = 2
 test_types = []             # empty = auto-discover from src/prompts/
 
+[supervisor]
+provider = ""               # empty = use llm.provider
+model = ""                  # empty = use llm.model
+temperature = 0.0
+
 [timeouts]
 test = 60
 coverage = 120
@@ -359,10 +359,12 @@ custom_mutant = 10
 | `ANTHROPIC_API_KEY` | — | Anthropic API key |
 | `QUALITY_THRESHOLD` | `0.80` | Quality score target |
 | `MAX_STEPS` | `20` | Max harness steps |
+| `SUPERVISOR_PROVIDER` | (same as LLM) | Supervisor LLM provider |
+| `SUPERVISOR_MODEL` | (same as LLM) | Supervisor LLM model |
 
 ### CLI Flags
 
-`--provider`, `--model`, `--quality-threshold`, `--max-steps`
+`--provider`, `--model`, `--quality-threshold`, `--max-steps`, `--supervisor-provider`, `--supervisor-model`
 
 ## Code Style
 - Plain dicts, not dataclasses
@@ -377,9 +379,13 @@ custom_mutant = 10
 ### Phase 2: Better Generation
 - **2A. Coverage-guided generation** — ✅ Done. `generate_coverage_tests` action feeds uncovered lines/branches into `prompts/coverage.md`. Supervisor triggers when `branch_coverage < 0.90`. Coverage is now function-scoped (uses `start_line`/`end_line` from tree-sitter).
 - **2B. Multi-cycle refinement** — ✅ Done. Up to 3 refinement cycles; stops early if quality improvement < 0.02 between coverage measurements (tracked via `state["score_history"]`).
-- **2C. Connect memory to supervisor** — Call `retrieve_similar()` in `run_harness` before the loop; store in `state["memory_context"]`. Supervisor uses past agent performance to deprioritize weak agents for similar functions.
 
-### Phase 3: Bigger Picture
-- **3A. Test oracle export** — `export_test_oracle(state, output_path)` in `writer.py`: consolidates strongest tests (by unique kills) into a single oracle file usable by repair tools (SWE-agent, OpenHands).
-- **3B. Trajectory analysis** — `scripts/analyze_trajectories.py`: aggregate statistics across trajectory logs — which agents/prompts work by difficulty tier, refinement ROI, coverage vs mutation correlation.
-- **3C. CI/CD integration** — `scripts/ci_check.py`: takes a git diff, extracts modified functions via tree-sitter, runs harness on each, exits non-zero if quality below threshold. Wire into a GitHub Action.
+### Phase 3: LLM Supervisor + Memory
+- **3A. LLM supervisor** — ✅ Done. Replaced heuristic `supervisor_policy()` with `llm_supervisor()` using LangChain tool calling. Each action is a tool with a `reasoning: str` parameter. The LLM sees serialized state (metrics, history, survived mutants) and picks one tool per step. Single-turn per step (no multi-turn conversation). Reasoning logged in trajectory history.
+- **3B. Memory-informed supervisor** — ✅ Done. `run_harness()` fetches `retrieve_similar()` + `get_reflections()` before the loop. Memory context is injected into the supervisor system prompt so the LLM can leverage past agent performance on similar functions.
+- **3C. Separate supervisor config** — ✅ Done. `[supervisor]` config section with its own provider/model/temperature. Defaults to main `[llm]` settings. Configurable via `ghtest.toml`, env vars, or CLI flags (`--supervisor-provider`, `--supervisor-model`).
+
+### Phase 4: Bigger Picture
+- **4A. Test oracle export** — `export_test_oracle(state, output_path)` in `writer.py`: consolidates strongest tests (by unique kills) into a single oracle file usable by repair tools (SWE-agent, OpenHands).
+- **4B. Trajectory analysis** — `scripts/analyze_trajectories.py`: aggregate statistics across trajectory logs — which agents/prompts work by difficulty tier, refinement ROI, coverage vs mutation correlation.
+- **4C. CI/CD integration** — `scripts/ci_check.py`: takes a git diff, extracts modified functions via tree-sitter, runs harness on each, exits non-zero if quality below threshold. Wire into a GitHub Action.

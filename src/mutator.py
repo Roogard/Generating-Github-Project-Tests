@@ -206,27 +206,37 @@ def generate_llm_mutants(fn, config):
     return mutants[:10]
 
 
-def run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_file=None, fn=None, config=None):
-    custom_mutant_timeout = config["timeouts"]["custom_mutant"] if config else DEFAULT_CUSTOM_MUTANT_TIMEOUT
+def generate_all_mutants(source, fn=None, config=None):
     ast_mutants = _generate_mutants(source)
-    agent_kills = {tt: set() for tt in test_files_dict}
-    agent_totals = {tt: 0 for tt in test_files_dict}
-
-    # generate LLM mutants if function info available
-    llm_mutants = []
+    llm_muts = []
     if fn and config:
         try:
-            llm_mutants = generate_llm_mutants(fn, config)
-            print(f"    [mutator] generated {len(llm_mutants)} LLM mutants")
+            llm_muts = generate_llm_mutants(fn, config)
+            print(f"    [mutator] generated {len(llm_muts)} LLM mutants")
         except Exception as e:
             print(f"    [mutator] LLM mutant generation failed: {e}")
-
-    all_mutants = ast_mutants + llm_mutants
-
-    mutant_descriptions = [
+    all_mutants = ast_mutants + llm_muts
+    descriptions = [
         {"id": i + 1, "tag": tag, "description": desc}
         for i, (tag, _source, desc) in enumerate(all_mutants)
     ]
+    print(f"    [mutator] {len(ast_mutants)} AST + {len(llm_muts)} LLM = {len(all_mutants)} total mutants")
+    return all_mutants, descriptions
+
+
+def run_all_agents(func_file, test_files_dict, repo_clone_dir, source, original_file=None, fn=None, config=None, pregenerated_mutants=None):
+    custom_mutant_timeout = config["timeouts"]["custom_mutant"] if config else DEFAULT_CUSTOM_MUTANT_TIMEOUT
+    agent_kills = {tt: set() for tt in test_files_dict}
+    agent_totals = {tt: 0 for tt in test_files_dict}
+
+    if pregenerated_mutants is not None:
+        all_mutants = pregenerated_mutants
+        mutant_descriptions = [
+            {"id": i + 1, "tag": tag, "description": desc}
+            for i, (tag, _source, desc) in enumerate(all_mutants)
+        ]
+    else:
+        all_mutants, mutant_descriptions = generate_all_mutants(source, fn=fn, config=config)
 
     if not all_mutants:
         return agent_kills, agent_totals, 0, []

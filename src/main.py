@@ -36,6 +36,8 @@ def parse_args():
     p.add_argument("--model", default=None, help="LLM model name")
     p.add_argument("--quality-threshold", type=float, default=None, dest="quality_threshold", help="Quality score threshold to stop (0.0-1.0)")
     p.add_argument("--max-steps", type=int, default=None, dest="max_steps", help="Max harness steps per function")
+    p.add_argument("--supervisor-provider", default=None, dest="supervisor_provider", help="LLM provider for supervisor (default: same as --provider)")
+    p.add_argument("--supervisor-model", default=None, dest="supervisor_model", help="LLM model for supervisor (default: same as --model)")
     return vars(p.parse_args())
 
 
@@ -49,6 +51,10 @@ def _build_config_overrides(args):
         overrides.setdefault("harness", {})["quality_threshold"] = args["quality_threshold"]
     if args.get("max_steps") is not None:
         overrides.setdefault("harness", {})["max_steps"] = args["max_steps"]
+    if args.get("supervisor_provider"):
+        overrides.setdefault("supervisor", {})["provider"] = args["supervisor_provider"]
+    if args.get("supervisor_model"):
+        overrides.setdefault("supervisor", {})["model"] = args["supervisor_model"]
     return overrides or None
 
 

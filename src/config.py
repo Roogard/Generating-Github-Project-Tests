@@ -22,6 +22,15 @@ DEFAULTS = {
         "test_types": [],
     },
 
+    #separate config for the llm supervisor — empty strings fall back to llm section
+    "supervisor": {
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "base_url": "https://api.openai.com/v1",
+        "api_key_env": "OPENAI_API_KEY",
+        "temperature": 0.0,
+    },
+
     #safety since some of these can take a long time
 
     "timeouts": {
@@ -50,6 +59,9 @@ ENV_OVERRIDES = {
     "TIMEOUT_COVERAGE": ("timeouts", "coverage"),
     "TIMEOUT_MUTMUT": ("timeouts", "mutmut"),
     "TIMEOUT_CUSTOM_MUTANT": ("timeouts", "custom_mutant"),
+    "SUPERVISOR_PROVIDER": ("supervisor", "provider"),
+    "SUPERVISOR_MODEL": ("supervisor", "model"),
+    "SUPERVISOR_BASE_URL": ("supervisor", "base_url"),
 }
 
 
@@ -73,6 +85,8 @@ def _apply_env_overrides(config):
             val = float(val)
         elif expected_type is int:
             val = int(val)
+        elif expected_type is bool:
+            val = val.lower() in ("1", "true", "yes")
         config[section][key] = val
 
 
