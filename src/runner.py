@@ -65,6 +65,7 @@ def run_single_test(test_file, repo_clone_dir, timeout=60):
     tests_passed = []
     tests_failed = []
     tests_error = []
+    failure_details = []
 
     if os.path.exists(report_file):
         with open(report_file, encoding="utf-8") as f:
@@ -76,6 +77,12 @@ def run_single_test(test_file, repo_clone_dir, timeout=60):
                 tests_passed.append(name)
             elif outcome == "failed":
                 tests_failed.append(name)
+                call = t.get("call", {})
+                failure_details.append({
+                    "nodeid": t["nodeid"],
+                    "longrepr": call.get("longrepr", ""),
+                    "crash": call.get("crash", {}),
+                })
             else:
                 tests_error.append(name)
         os.remove(report_file)
@@ -90,6 +97,7 @@ def run_single_test(test_file, repo_clone_dir, timeout=60):
         "passed": tests_passed,
         "failed": tests_failed,
         "errors": tests_error,
+        "failure_details": failure_details,
         "stdout": result.stdout,
         "stderr": result.stderr,
         "returncode": result.returncode,

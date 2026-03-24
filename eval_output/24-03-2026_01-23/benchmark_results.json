@@ -1,0 +1,80 @@
+[
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "gcd",
+    "difficulty": "simple",
+    "has_bug": false,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 31,
+    "tests_failed": 0,
+    "tests_errored": 0,
+    "failures_count": 0,
+    "elapsed_seconds": 97.1
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "quicksort",
+    "difficulty": "simple",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 37,
+    "tests_failed": 1,
+    "tests_errored": 0,
+    "failures_count": 1,
+    "elapsed_seconds": 86.3
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "flatten",
+    "difficulty": "simple",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 23,
+    "tests_failed": 12,
+    "tests_errored": 0,
+    "failures_count": 12,
+    "elapsed_seconds": 131.8
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "is_valid_parenthesization",
+    "difficulty": "simple",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 31,
+    "tests_failed": 3,
+    "tests_errored": 0,
+    "failures_count": 3,
+    "elapsed_seconds": 133.0
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "mergesort",
+    "difficulty": "moderate",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 12,
+    "tests_failed": 25,
+    "tests_errored": 0,
+    "failures_count": 25,
+    "elapsed_seconds": 231.1
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "gcd",
+    "difficulty": "simple",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 16,
+    "tests_failed": 14,
+    "tests_errored": 0,
+    "failures_count": 14,
+    "elapsed_seconds": 111.3
+  }
+]

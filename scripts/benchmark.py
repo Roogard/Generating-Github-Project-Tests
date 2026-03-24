@@ -13,8 +13,11 @@ from dotenv import load_dotenv
 
 from src.config import load_config
 from src.extractor import clone_repo, extract_functions
-from src.harness import run_harness
-from src.writer import write_meta
+from src.agents import call_agent
+from src.runner import run_single_test
+from src.writer import write_meta, write_function, write_generated_tests
+from src.reporter import parse_failures
+from src.main import WHITEBOX_TYPES, BLACKBOX_TYPES
 
 
 def load_benchmark(path="data/benchmark_functions.json"):
@@ -43,6 +46,7 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
     run_dir = os.path.join(output_dir, timestamp)
     os.makedirs(run_dir, exist_ok=True)
 
+    all_types = WHITEBOX_TYPES + BLACKBOX_TYPES
     results = []
 
     for repo_url, repo_entries in by_repo.items():
@@ -69,52 +73,78 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
             target_name = entry["function_name"]
             difficulty = entry.get("difficulty", "unknown")
 
+            target_file = entry.get("file")
             candidates = fn_by_name.get(target_name, [])
+            if target_file:
+                norm = target_file.replace("\\", "/")
+                candidates = [c for c in candidates if
+                    c["file_path"].replace("\\", "/") == norm or
+                    c["file_path"].replace("\\", "/").endswith("/" + norm)]
             if not candidates:
                 print(f"\n  SKIP: {target_name} not found in {repo_name}")
                 results.append({
                     "repo": repo_url,
                     "function": target_name,
                     "difficulty": difficulty,
+                    "has_bug": entry.get("has_bug"),
                     "status": "not_found",
                 })
                 continue
 
-            # pick the first match
             fn = candidates[0]
             idx = len(results)
 
             print(f"\n--- Benchmark {idx + 1}: {target_name} ({difficulty}) from {repo_name} ---")
             t0 = time.time()
             try:
-                final_state = run_harness(fn, idx, repo_output, tmp, config)
+                write_function(fn, repo_output, idx)
+
+                # generate tests
+                generated = {}
+                for test_type in all_types:
+                    code = call_agent(test_type, fn, config)
+                    if code and code.strip():
+                        generated[test_type] = code
+                write_generated_tests(fn, generated, repo_output, idx)
+
+                # run all test files
+                test_outcomes = {}
+                fn_dir_name = f"{fn['name']}_{idx}"
+                test_dir = os.path.join(repo_output, "generated_tests", fn_dir_name)
+                if os.path.isdir(test_dir):
+                    for fname in sorted(os.listdir(test_dir)):
+                        if fname.startswith("test_") and fname.endswith(".py"):
+                            test_file = os.path.join(test_dir, fname)
+                            result = run_single_test(
+                                test_file, tmp, timeout=config["timeouts"]["test"]
+                            )
+                            test_outcomes[(fn_dir_name, fname)] = result
+
+                failures = parse_failures(test_outcomes)
                 elapsed = time.time() - t0
+
+                tests_passed = sum(len(r["passed"]) for r in test_outcomes.values())
+                tests_failed = sum(len(r["failed"]) for r in test_outcomes.values())
+                tests_errored = sum(len(r["errors"]) for r in test_outcomes.values())
 
                 results.append({
                     "repo": repo_url,
                     "function": target_name,
                     "difficulty": difficulty,
+                    "has_bug": entry.get("has_bug"),
                     "status": "ok",
-                    "mutation_score": round(final_state["mutation_score"], 4),
-                    "llm_mutation_score": round(final_state.get("llm_mutation_score", 0.0), 4),
-                    "branch_coverage": round(final_state["branch_coverage"], 4),
-                    "line_coverage": round(final_state["line_coverage"], 4),
-                    "assertion_density": round(final_state.get("assertion_density", 0.0), 4),
-                    "test_diversity": round(final_state.get("test_diversity", 0.0), 4),
-                    "quality_score": round(final_state.get("quality_score", 0.0), 4),
-                    "steps": final_state["step_count"],
-                    "fix_attempts": final_state["fix_attempts"],
-                    "mutant_count": final_state["mutant_count"],
+                    "tests_generated": len(generated),
+                    "tests_passed": tests_passed,
+                    "tests_failed": tests_failed,
+                    "tests_errored": tests_errored,
+                    "failures_count": len(failures),
                     "elapsed_seconds": round(elapsed, 1),
                 })
 
-                print(f"  quality={final_state.get('quality_score', 0):.2f}, "
-                      f"mutation={final_state['mutation_score']:.1%}, "
-                      f"llm_mutation={final_state.get('llm_mutation_score', 0):.1%}, "
-                      f"line={final_state['line_coverage']:.1%}, "
-                      f"branch={final_state['branch_coverage']:.1%}, "
-                      f"steps={final_state['step_count']}, "
-                      f"time={elapsed:.1f}s")
+                print(f"  generated={len(generated)}, passed={tests_passed}, "
+                      f"failed={tests_failed}, errors={tests_errored}, "
+                      f"bugs={len(failures)}, time={elapsed:.1f}s")
+
             except Exception as e:
                 elapsed = time.time() - t0
                 print(f"  ERROR: {e}")
@@ -122,6 +152,7 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
                     "repo": repo_url,
                     "function": target_name,
                     "difficulty": difficulty,
+                    "has_bug": entry.get("has_bug"),
                     "status": "error",
                     "error": str(e),
                     "elapsed_seconds": round(elapsed, 1),
@@ -137,41 +168,33 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
     # print summary
     ok_results = [r for r in results if r["status"] == "ok"]
     if ok_results:
+        total_tests = sum(r["tests_passed"] + r["tests_failed"] + r["tests_errored"] for r in ok_results)
+        total_failures = sum(r["failures_count"] for r in ok_results)
+
         print("\n" + "=" * 60)
         print("BENCHMARK SUMMARY")
         print("=" * 60)
-
-        avg_quality = sum(r["quality_score"] for r in ok_results) / len(ok_results)
-        avg_mutation = sum(r["mutation_score"] for r in ok_results) / len(ok_results)
-        avg_llm_mutation = sum(r["llm_mutation_score"] for r in ok_results) / len(ok_results)
-        avg_line = sum(r["line_coverage"] for r in ok_results) / len(ok_results)
-        avg_branch = sum(r["branch_coverage"] for r in ok_results) / len(ok_results)
-        avg_steps = sum(r["steps"] for r in ok_results) / len(ok_results)
-
         print(f"  Functions tested: {len(ok_results)}/{len(results)}")
-        print(f"  Avg quality score:      {avg_quality:.3f}")
-        print(f"  Avg mutation score:     {avg_mutation:.1%}")
-        print(f"  Avg LLM mutation score: {avg_llm_mutation:.1%}")
-        print(f"  Avg line coverage:      {avg_line:.1%}")
-        print(f"  Avg branch coverage:    {avg_branch:.1%}")
-        print(f"  Avg steps:              {avg_steps:.1f}")
+        print(f"  Total tests run:  {total_tests}")
+        print(f"  Total failures:   {total_failures} (potential bugs detected)")
 
-        # breakdown by difficulty
+        buggy = [r for r in ok_results if r.get("has_bug") is True]
+        clean = [r for r in ok_results if r.get("has_bug") is False]
+        bugs_detected = sum(1 for r in buggy if r["failures_count"] > 0 or r["tests_failed"] > 0)
+        clean_passed = sum(1 for r in clean if r["tests_failed"] == 0 and r["tests_errored"] == 0)
+        print(f"\n  Bug detection rate: {bugs_detected}/{len(buggy)} buggy functions caught")
+        print(f"  Clean control:      {clean_passed}/{len(clean)} clean functions passed")
+
         for tier in ["simple", "moderate", "complex"]:
             tier_results = [r for r in ok_results if r["difficulty"] == tier]
             if tier_results:
-                t_quality = sum(r["quality_score"] for r in tier_results) / len(tier_results)
-                t_mutation = sum(r["mutation_score"] for r in tier_results) / len(tier_results)
-                t_llm = sum(r["llm_mutation_score"] for r in tier_results) / len(tier_results)
-                t_line = sum(r["line_coverage"] for r in tier_results) / len(tier_results)
-                t_branch = sum(r["branch_coverage"] for r in tier_results) / len(tier_results)
+                avg_failures = sum(r["failures_count"] for r in tier_results) / len(tier_results)
+                avg_tests = sum(
+                    r["tests_passed"] + r["tests_failed"] + r["tests_errored"]
+                    for r in tier_results
+                ) / len(tier_results)
                 print(f"\n  {tier} ({len(tier_results)} functions):")
-                print(f"    quality={t_quality:.3f}, mutation={t_mutation:.1%}, llm_mutation={t_llm:.1%}, "
-                      f"line={t_line:.1%}, branch={t_branch:.1%}")
-
-        min_quality = min(r["quality_score"] for r in ok_results)
-        max_quality = max(r["quality_score"] for r in ok_results)
-        print(f"\n  Quality range: {min_quality:.3f} — {max_quality:.3f}")
+                print(f"    avg {avg_failures:.1f} failures, avg {avg_tests:.1f} tests run")
 
     print(f"\nResults written to {results_path}")
 

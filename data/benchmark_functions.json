@@ -1,102 +1,44 @@
 [
   {
-    "repo": "https://github.com/keon/algorithms",
-    "function_name": "n_sum",
-    "difficulty": "complex"
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function_name": "gcd",
+    "file": "correct_python_programs/gcd.py",
+    "difficulty": "simple",
+    "has_bug": false
   },
   {
-    "repo": "https://github.com/keon/algorithms",
-    "function_name": "longest_common_prefix_v1",
-    "difficulty": "simple"
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function_name": "quicksort",
+    "file": "python_programs/quicksort.py",
+    "difficulty": "simple",
+    "has_bug": true
   },
   {
-    "repo": "https://github.com/keon/algorithms",
-    "function_name": "max_profit_optimized",
-    "difficulty": "moderate"
-  },
-  {
-    "repo": "https://github.com/keon/algorithms",
-    "function_name": "binary_search",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/keon/algorithms",
-    "function_name": "merge_sort",
-    "difficulty": "moderate"
-  },
-  {
-    "repo": "https://github.com/TheAlgorithms/Python",
-    "function_name": "binary_search",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/TheAlgorithms/Python",
-    "function_name": "quick_sort",
-    "difficulty": "moderate"
-  },
-  {
-    "repo": "https://github.com/TheAlgorithms/Python",
-    "function_name": "dijkstra",
-    "difficulty": "complex"
-  },
-  {
-    "repo": "https://github.com/TheAlgorithms/Python",
-    "function_name": "bubble_sort",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/TheAlgorithms/Python",
-    "function_name": "knapsack",
-    "difficulty": "complex"
-  },
-  {
-    "repo": "https://github.com/pytoolz/toolz",
-    "function_name": "groupby",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/pytoolz/toolz",
-    "function_name": "merge_sorted",
-    "difficulty": "moderate"
-  },
-  {
-    "repo": "https://github.com/pytoolz/toolz",
-    "function_name": "topk",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/mahmoud/boltons",
-    "function_name": "chunked",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/mahmoud/boltons",
+    "repo": "https://github.com/jkoppel/QuixBugs",
     "function_name": "flatten",
-    "difficulty": "moderate"
+    "file": "python_programs/flatten.py",
+    "difficulty": "simple",
+    "has_bug": true
   },
   {
-    "repo": "https://github.com/mahmoud/boltons",
-    "function_name": "backoff",
-    "difficulty": "moderate"
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function_name": "is_valid_parenthesization",
+    "file": "python_programs/is_valid_parenthesization.py",
+    "difficulty": "simple",
+    "has_bug": true
   },
   {
-    "repo": "https://github.com/more-itertools/more-itertools",
-    "function_name": "chunked",
-    "difficulty": "simple"
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function_name": "mergesort",
+    "file": "python_programs/mergesort.py",
+    "difficulty": "moderate",
+    "has_bug": true
   },
   {
-    "repo": "https://github.com/more-itertools/more-itertools",
-    "function_name": "flatten",
-    "difficulty": "simple"
-  },
-  {
-    "repo": "https://github.com/more-itertools/more-itertools",
-    "function_name": "unique_everseen",
-    "difficulty": "moderate"
-  },
-  {
-    "repo": "https://github.com/more-itertools/more-itertools",
-    "function_name": "partition",
-    "difficulty": "moderate"
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function_name": "gcd",
+    "file": "python_programs/gcd.py",
+    "difficulty": "simple",
+    "has_bug": true
   }
 ]

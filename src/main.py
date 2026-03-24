@@ -4,7 +4,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ast
-import json
 import shutil
 import tempfile
 
@@ -12,18 +11,18 @@ from dotenv import load_dotenv
 
 from src.config import load_config
 from src.extractor import clone_repo, extract_functions
-from src.harness import run_harness, discover_test_types
-from src.writer import write_meta
-from src.mutator import compute_unique_kills
-from src.memory import (
-    get_db, get_collection, store_result,
-    store_reflection, generate_reflections,
-)
+from src.agents import call_agent
+from src.runner import run_single_test
+from src.writer import write_meta, write_function, write_generated_tests, generate_automation
+from src.reporter import parse_failures, print_bug_report, write_bug_report
 
 
-#generated commands for custimization while running, i almost never use these and just run benchmark and compare
+WHITEBOX_TYPES = ["statement", "block", "condition", "path"]
+BLACKBOX_TYPES = ["bva", "ecp", "mutation"]
+
+
 def parse_args():
-    p = argparse.ArgumentParser(description="Generate unit tests for a GitHub repo")
+    p = argparse.ArgumentParser(description="Generate unit tests for a GitHub repo and detect bugs")
     p.add_argument("--repo", default="https://github.com/keon/algorithms", help="GitHub repo URL")
     p.add_argument("--output", default="./eval_output", help="Output directory")
     p.add_argument("--limit", type=int, default=3, help="Max functions to process")
@@ -34,10 +33,6 @@ def parse_args():
     p.add_argument("--stratify", action="store_true", help="Sample evenly across simple/moderate/complex functions")
     p.add_argument("--provider", default=None, help="LLM provider (deepseek, openai, anthropic, ollama)")
     p.add_argument("--model", default=None, help="LLM model name")
-    p.add_argument("--quality-threshold", type=float, default=None, dest="quality_threshold", help="Quality score threshold to stop (0.0-1.0)")
-    p.add_argument("--max-steps", type=int, default=None, dest="max_steps", help="Max harness steps per function")
-    p.add_argument("--supervisor-provider", default=None, dest="supervisor_provider", help="LLM provider for supervisor (default: same as --provider)")
-    p.add_argument("--supervisor-model", default=None, dest="supervisor_model", help="LLM model for supervisor (default: same as --model)")
     return vars(p.parse_args())
 
 
@@ -47,18 +42,9 @@ def _build_config_overrides(args):
         overrides.setdefault("llm", {})["provider"] = args["provider"]
     if args.get("model"):
         overrides.setdefault("llm", {})["model"] = args["model"]
-    if args.get("quality_threshold") is not None:
-        overrides.setdefault("harness", {})["quality_threshold"] = args["quality_threshold"]
-    if args.get("max_steps") is not None:
-        overrides.setdefault("harness", {})["max_steps"] = args["max_steps"]
-    if args.get("supervisor_provider"):
-        overrides.setdefault("supervisor", {})["provider"] = args["supervisor_provider"]
-    if args.get("supervisor_model"):
-        overrides.setdefault("supervisor", {})["model"] = args["supervisor_model"]
     return overrides or None
 
 
-#at first everything i used was really simple, so adding this ensures different difficulty repos and functions are used
 def _fn_complexity(source):
     lines = len(source.strip().splitlines())
     try:
@@ -117,12 +103,9 @@ def main():
     max_branches = args["max_branches"]
     stratify = args["stratify"]
 
-    test_types = discover_test_types(config)
-    print(f"Test agents: {test_types}")
+    all_types = WHITEBOX_TYPES + BLACKBOX_TYPES
+    print(f"Test types: whitebox={WHITEBOX_TYPES}, blackbox={BLACKBOX_TYPES}")
     print(f"LLM: {config['llm']['provider']}/{config['llm']['model']}")
-
-    db = get_db()
-    collection = get_collection(db)
 
     repo_name = repo.rstrip("/").split("/")[-1].replace(".git", "")
     output_dir = os.path.join(output_base, repo_name)
@@ -165,49 +148,63 @@ def main():
         functions = all_functions[:limit]
         print(f"Using first {limit} function(s)")
 
-    # --- Run harness ---
-    #everything is pretty much put through run_harness
+    # --- Step 1-2: Generate + write tests for each function ---
 
-    print("\nRunning harness (iterative refinement)...")
-    batch_records = []
+    print("\nGenerating tests...")
     for i, fn in enumerate(functions):
         print(f"\n--- Function {i + 1}/{len(functions)}: {fn['name']} ---")
-        final_state = run_harness(fn, i, output_dir, tmp, config)
+        write_function(fn, output_dir, i)
 
-        agent_kills = final_state["agent_kills"]
-        mutant_count = final_state["mutant_count"]
-        selected = final_state["planned_generates"]
+        generated = {}
+        for test_type in all_types:
+            print(f"  generating {test_type}...", end=" ", flush=True)
+            code = call_agent(test_type, fn, config)
+            if code and code.strip():
+                generated[test_type] = code
+                print(f"ok ({len(code)} chars)")
+            else:
+                print("empty")
 
-        for tt in selected:
-            if tt not in agent_kills:
-                agent_kills[tt] = set()
-        agent_totals = {tt: mutant_count for tt in agent_kills}
-        unique_kills = compute_unique_kills(agent_kills) if mutant_count > 0 else {}
+        write_generated_tests(fn, generated, output_dir, i)
+        print(f"  wrote {len(generated)} test file(s)")
 
-        if mutant_count > 0:
-            store_result(collection, fn, selected, agent_kills, agent_totals, mutant_count, unique_kills)
+    # --- Step 3: Generate automation script ---
 
-            record = {"function_name": fn["name"], "agents_selected": json.dumps(selected)}
-            for tt in selected:
-                record[f"{tt}_killed"] = len(agent_kills.get(tt, set()))
-                record[f"{tt}_total"] = agent_totals.get(tt, 0)
-                record[f"{tt}_unique"] = unique_kills.get(tt, 0)
-            record["overall_kill_rate"] = final_state["mutation_score"]
-            batch_records.append(record)
+    generate_automation(output_dir, tmp)
+    print(f"\nAutomation script: {os.path.join(output_dir, 'automation', 'run_tests.sh')}")
 
-        print(f"  Final mutation score: {final_state['mutation_score']:.1%}")
-        print(f"  Steps taken: {final_state['step_count']}")
+    # --- Step 4: Execute all tests ---
 
-    if batch_records:
-        print("\nGenerating reflections from this run...")
-        reflection_texts = generate_reflections(batch_records, config, test_types)
-        for text in reflection_texts:
-            store_reflection(db, text)
-        print(f"Memory updated: {collection.count()} function records, "
-              f"{len(reflection_texts)} new reflections")
+    print("\nRunning tests...")
+    test_outcomes = {}
+    generated_tests_base = os.path.join(output_dir, "generated_tests")
+
+    if os.path.isdir(generated_tests_base):
+        for fn_dir in sorted(os.listdir(generated_tests_base)):
+            fn_path = os.path.join(generated_tests_base, fn_dir)
+            if not os.path.isdir(fn_path):
+                continue
+            for fname in sorted(os.listdir(fn_path)):
+                if fname.startswith("test_") and fname.endswith(".py"):
+                    test_file = os.path.join(fn_path, fname)
+                    print(f"  {fn_dir}/{fname}...", end=" ", flush=True)
+                    result = run_single_test(test_file, tmp, timeout=config["timeouts"]["test"])
+                    p = len(result["passed"])
+                    f_count = len(result["failed"])
+                    e = len(result["errors"])
+                    print(f"{p} passed, {f_count} failed, {e} errors")
+                    test_outcomes[(fn_dir, fname)] = result
+
+    # --- Step 5-6: Parse failures + print report ---
+
+    failures = parse_failures(test_outcomes)
+    print_bug_report(failures, repo)
+    write_bug_report(failures, repo, output_dir)
 
     shutil.rmtree(tmp, ignore_errors=True)
     print(f"\nDone. Output: {output_dir}")
+    if failures:
+        print(f"Bug report: {os.path.join(output_dir, 'bug_report.txt')}")
 
 
 def cli():

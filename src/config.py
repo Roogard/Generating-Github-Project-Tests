@@ -4,40 +4,15 @@ import tomllib
 
 DEFAULTS = {
 
-    #I found deepseek to be the best llm here, since it's solid at coding and very cheap
-
     "llm": {
-        "provider": "deepseek",
-        "model": "deepseek-chat",
-        "base_url": "",
-        "api_key_env": "DEEPSEEK_API_KEY",
-    },
-
-    #project isn't a proper harness yet, but it will be
-
-    "harness": {
-        "quality_threshold": 0.80,
-        "max_steps": 20,
-        "max_fix_attempts": 2,
-        "test_types": [],
-    },
-
-    #separate config for the llm supervisor — empty strings fall back to llm section
-    "supervisor": {
         "provider": "openai",
-        "model": "gpt-4o-mini",
-        "base_url": "https://api.openai.com/v1",
+        "model": "o4-mini",
+        "base_url": "",
         "api_key_env": "OPENAI_API_KEY",
-        "temperature": 0.0,
     },
-
-    #safety since some of these can take a long time
 
     "timeouts": {
         "test": 60,
-        "coverage": 120,
-        "mutmut": 600,
-        "custom_mutant": 10,
     },
 }
 
@@ -52,16 +27,7 @@ ENV_OVERRIDES = {
     "LLM_PROVIDER": ("llm", "provider"),
     "LLM_MODEL": ("llm", "model"),
     "LLM_BASE_URL": ("llm", "base_url"),
-    "QUALITY_THRESHOLD": ("harness", "quality_threshold"),
-    "MAX_STEPS": ("harness", "max_steps"),
-    "MAX_FIX_ATTEMPTS": ("harness", "max_fix_attempts"),
     "TIMEOUT_TEST": ("timeouts", "test"),
-    "TIMEOUT_COVERAGE": ("timeouts", "coverage"),
-    "TIMEOUT_MUTMUT": ("timeouts", "mutmut"),
-    "TIMEOUT_CUSTOM_MUTANT": ("timeouts", "custom_mutant"),
-    "SUPERVISOR_PROVIDER": ("supervisor", "provider"),
-    "SUPERVISOR_MODEL": ("supervisor", "model"),
-    "SUPERVISOR_BASE_URL": ("supervisor", "base_url"),
 }
 
 
