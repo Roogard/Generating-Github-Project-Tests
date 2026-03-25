@@ -4,6 +4,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import ast
+import json
 import shutil
 import tempfile
 
@@ -11,9 +12,9 @@ from dotenv import load_dotenv
 
 from src.config import load_config
 from src.extractor import clone_repo, extract_functions
-from src.agents import call_agent
+from src.agents import call_agent, call_fix_agent, strip_code_fences
 from src.runner import run_single_test
-from src.writer import write_meta, write_function, write_generated_tests, generate_automation
+from src.writer import write_meta, write_function, write_generated_tests, generate_automation, write_fixed_function, replace_function_in_repo
 from src.reporter import parse_failures, print_bug_report, write_bug_report
 
 
@@ -31,6 +32,7 @@ def parse_args():
     p.add_argument("--min-branches", type=int, default=0, dest="min_branches", help="Skip functions with fewer than N branches")
     p.add_argument("--max-branches", type=int, default=0, dest="max_branches", help="Skip functions with more than N branches")
     p.add_argument("--stratify", action="store_true", help="Sample evenly across simple/moderate/complex functions")
+    p.add_argument("--max-fix-iterations", type=int, default=3, dest="max_fix_iterations", help="Max fix-retest iterations (0 to disable)")
     p.add_argument("--provider", default=None, help="LLM provider (deepseek, openai, anthropic, ollama)")
     p.add_argument("--model", default=None, help="LLM model name")
     return vars(p.parse_args())
@@ -87,6 +89,63 @@ def _stratified_sample(functions, limit):
     if remaining > 0:
         selected.extend(overflow[:remaining])
     return selected[:limit]
+
+
+def run_harness_loop(fn, fn_key, test_outcomes, repo_clone_dir, output_dir, idx, config, max_iterations=3):
+    failures = parse_failures(test_outcomes)
+    fn_failures = [f for f in failures if f["function"] == fn_key]
+    if not fn_failures:
+        return test_outcomes, []
+
+    previous_attempts = []
+    history = []
+
+    for iteration in range(max_iterations):
+        print(f"    iteration {iteration + 1}/{max_iterations} ({len(fn_failures)} failure(s))...", end=" ", flush=True)
+
+        fixed_code = call_fix_agent(fn, fn_failures, config, previous_attempts=previous_attempts)
+        if not fixed_code or not fixed_code.strip():
+            print("no output")
+            break
+
+        fixed_code = strip_code_fences(fixed_code)
+
+        new_end = replace_function_in_repo(fn, fixed_code, repo_clone_dir)
+        fn["source"] = fixed_code
+        fn["end_line"] = new_end
+
+        write_fixed_function(fn, fixed_code, output_dir, idx, iteration=iteration)
+
+        # re-run all tests for this function
+        test_outcomes = {}
+        test_dir = os.path.join(output_dir, "generated_tests", fn_key)
+        if os.path.isdir(test_dir):
+            for fname in sorted(os.listdir(test_dir)):
+                if fname.startswith("test_") and fname.endswith(".py"):
+                    test_file = os.path.join(test_dir, fname)
+                    result = run_single_test(test_file, repo_clone_dir, timeout=config["timeouts"]["test"])
+                    test_outcomes[(fn_key, fname)] = result
+
+        failures = parse_failures(test_outcomes)
+        fn_failures = [f for f in failures if f["function"] == fn_key]
+
+        previous_attempts.append({
+            "fixed_code": fixed_code,
+            "remaining_failures": fn_failures,
+        })
+
+        history.append({
+            "iteration": iteration,
+            "failures_count": len(fn_failures),
+        })
+
+        if not fn_failures:
+            print("converged")
+            break
+        else:
+            print(f"{len(fn_failures)} failure(s) remain")
+
+    return test_outcomes, history
 
 
 def main():
@@ -195,9 +254,52 @@ def main():
                     print(f"{p} passed, {f_count} failed, {e} errors")
                     test_outcomes[(fn_dir, fname)] = result
 
-    # --- Step 5-6: Parse failures + print report ---
+    # --- Step 5-6: Parse failures + harness loop ---
 
+    max_iterations = args.get("max_fix_iterations", 3)
     failures = parse_failures(test_outcomes)
+
+    all_histories = {}
+    if failures and max_iterations > 0:
+        print(f"\nRunning harness loop (max {max_iterations} iteration(s))...")
+        fn_by_key = {f"{fn['name']}_{i}": (fn, i) for i, fn in enumerate(functions)}
+
+        # group test_outcomes by function directory
+        outcomes_by_fn = {}
+        for (fn_dir, fname), result in test_outcomes.items():
+            outcomes_by_fn.setdefault(fn_dir, {})[(fn_dir, fname)] = result
+
+        for fn_key, fn_outcomes in outcomes_by_fn.items():
+            if fn_key not in fn_by_key:
+                continue
+            fn, idx = fn_by_key[fn_key]
+            # check if this function has any failures
+            fn_failures = [f for f in failures if f["function"] == fn_key]
+            if not fn_failures:
+                continue
+            print(f"  {fn_key} ({len(fn_failures)} failure(s)):")
+            final_outcomes, history = run_harness_loop(
+                fn, fn_key, fn_outcomes, tmp, output_dir, idx, config,
+                max_iterations=max_iterations,
+            )
+            test_outcomes.update(final_outcomes)
+            if history:
+                all_histories[fn_key] = {
+                    "iterations": len(history),
+                    "converged": history[-1]["failures_count"] == 0,
+                    "history": history,
+                }
+
+        # re-parse failures from final outcomes
+        failures = parse_failures(test_outcomes)
+
+    # write harness history
+    if all_histories:
+        history_path = os.path.join(output_dir, "harness_history.json")
+        with open(history_path, "w", encoding="utf-8") as f:
+            json.dump(all_histories, f, indent=2)
+        print(f"Harness history: {history_path}")
+
     print_bug_report(failures, repo)
     write_bug_report(failures, repo, output_dir)
 

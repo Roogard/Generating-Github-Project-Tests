@@ -45,6 +45,11 @@ def clone_repo(url, target_dir):
     subprocess.run(["git", "clone", "--depth=1", url, target_dir], check=True)
 
 
+def clone_repo_at_commit(url, target_dir, commit_sha):
+    subprocess.run(["git", "clone", url, target_dir], check=True)
+    subprocess.run(["git", "checkout", commit_sha], cwd=target_dir, check=True)
+
+
 def extract_functions(repo_path):
     functions = []
 

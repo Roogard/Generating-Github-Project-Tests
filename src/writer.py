@@ -21,6 +21,61 @@ def write_function(fn, output_dir, index):
         f.write(fn["source"])
 
 
+def write_fixed_function(fn, fixed_code, output_dir, index, iteration=None):
+    ext = LANG_EXT.get(fn["language"], "txt")
+    base = os.path.join(output_dir, "fixed_functions", f"{fn['name']}_{index}")
+    if iteration is not None:
+        folder = os.path.join(base, f"iteration_{iteration}")
+    else:
+        folder = base
+    os.makedirs(folder, exist_ok=True)
+    with open(os.path.join(folder, f"fixed_function.{ext}"), "w", encoding="utf-8") as f:
+        f.write(fixed_code)
+
+
+def replace_function_in_repo(fn, fixed_code, repo_clone_dir):
+    file_path = os.path.join(repo_clone_dir, fn["file_path"])
+    with open(file_path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    start = fn["start_line"] - 1
+    end = fn["end_line"]
+
+    # detect original indentation from the first line of the function
+    if start < len(lines):
+        original_first = lines[start]
+        indent = len(original_first) - len(original_first.lstrip())
+        indent_str = original_first[:indent]
+    else:
+        indent_str = ""
+
+    # re-indent the fixed code to match the original
+    fixed_lines = fixed_code.splitlines(True)
+    if fixed_lines:
+        # detect indentation of the fixed code's first line
+        first_fixed = fixed_lines[0]
+        fixed_indent = len(first_fixed) - len(first_fixed.lstrip())
+        reindented = []
+        for line in fixed_lines:
+            if line.strip() == "":
+                reindented.append("\n")
+            else:
+                stripped = line[min(fixed_indent, len(line) - len(line.lstrip())):]
+                reindented.append(indent_str + stripped)
+        fixed_lines = reindented
+
+    # ensure last line ends with newline
+    if fixed_lines and not fixed_lines[-1].endswith("\n"):
+        fixed_lines[-1] += "\n"
+
+    new_lines = lines[:start] + fixed_lines + lines[end:]
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.writelines(new_lines)
+
+    new_end = start + len(fixed_lines)
+    return new_end
+
+
 def write_tests(fn, test_results, output_dir, index):
     ext = LANG_EXT.get(fn["language"], "txt")
     folder = os.path.join(output_dir, "test_cases", f"{fn['name']}_{index}")

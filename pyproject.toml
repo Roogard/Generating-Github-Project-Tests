@@ -12,6 +12,7 @@ dependencies = [
 
 [project.optional-dependencies]
 anthropic = ["langchain-anthropic>=0.3"]
+swebench = ["swebench>=2.0", "datasets>=2.0"]
 
 [project.scripts]
 ghtest = "src.main:cli"
