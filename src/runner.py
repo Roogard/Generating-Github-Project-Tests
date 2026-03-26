@@ -66,6 +66,7 @@ def run_single_test(test_file, repo_clone_dir, timeout=60):
     tests_failed = []
     tests_error = []
     failure_details = []
+    error_details = []
 
     if os.path.exists(report_file):
         with open(report_file, encoding="utf-8") as f:
@@ -85,19 +86,29 @@ def run_single_test(test_file, repo_clone_dir, timeout=60):
                 })
             else:
                 tests_error.append(name)
+                setup = t.get("setup", {})
+                error_details.append({
+                    "nodeid": t["nodeid"],
+                    "longrepr": setup.get("longrepr", "") or t.get("call", {}).get("longrepr", ""),
+                })
         os.remove(report_file)
     else:
         tests_error.append("__import_or_collection_error__")
+        # capture collection error from stdout (pytest prints it there)
+        error_details.append({"nodeid": "__import_or_collection_error__", "longrepr": result.stdout})
 
     # pytest compiled the file but collected 0 tests (e.g. all errored during collection)
     if not tests_passed and not tests_failed and not tests_error and result.returncode != 0:
         tests_error.append("__collection_error__")
+        error_details.append({"nodeid": "__collection_error__", "longrepr": result.stdout})
 
     return {
         "passed": tests_passed,
         "failed": tests_failed,
         "errors": tests_error,
         "failure_details": failure_details,
+        "error_details": error_details,
+        "test_file_path": os.path.abspath(test_file),
         "stdout": result.stdout,
         "stderr": result.stderr,
         "returncode": result.returncode,

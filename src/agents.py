@@ -80,6 +80,23 @@ def strip_code_fences(code):
 def call_fix_agent(fn, failures_for_fn, config, previous_attempts=None):
     parts = []
 
+    # include the source of each unique failing test file so the LLM can see
+    # exactly what is being imported and asserted
+    test_sources = {}
+    for failure in failures_for_fn:
+        path = failure.get("test_file_path", "")
+        if path and path not in test_sources:
+            try:
+                with open(path, encoding="utf-8") as f:
+                    test_sources[path] = f.read()
+            except OSError:
+                pass
+
+    if test_sources:
+        parts.append("## Failing Test Files\n")
+        for path, src in test_sources.items():
+            parts.append(f"```python\n# {os.path.basename(path)}\n{src}\n```\n")
+
     if previous_attempts:
         parts.append("## Previous Fix Attempts\n")
         for i, attempt in enumerate(previous_attempts):
@@ -98,7 +115,10 @@ def call_fix_agent(fn, failures_for_fn, config, previous_attempts=None):
         parts.append(f"- Expected:  {failure['expected']}")
         parts.append(f"- Actual:    {failure['actual']}")
         parts.append(f"- Location:  {failure['file']}:{failure['line']}")
-        detail = failure["longrepr"] if failure["kind"] == "failure" else failure.get("stderr", "")
+        if failure["kind"] == "failure":
+            detail = failure["longrepr"]
+        else:
+            detail = failure.get("longrepr") or failure.get("stderr") or failure.get("stdout", "")
         parts.append(f"- Detail:\n{detail}\n")
 
     extra_context = "\n".join(parts)

@@ -1,0 +1,47 @@
+[
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "gcd",
+    "difficulty": "simple",
+    "has_bug": false,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 29,
+    "tests_failed": 0,
+    "tests_errored": 0,
+    "failures_count": 0,
+    "fix_iterations": 0,
+    "converged": false,
+    "elapsed_seconds": 144.3
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "quicksort",
+    "difficulty": "simple",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 32,
+    "tests_failed": 3,
+    "tests_errored": 0,
+    "failures_count": 3,
+    "fix_iterations": 3,
+    "converged": false,
+    "elapsed_seconds": 221.0
+  },
+  {
+    "repo": "https://github.com/jkoppel/QuixBugs",
+    "function": "flatten",
+    "difficulty": "simple",
+    "has_bug": true,
+    "status": "ok",
+    "tests_generated": 7,
+    "tests_passed": 22,
+    "tests_failed": 13,
+    "tests_errored": 0,
+    "failures_count": 13,
+    "fix_iterations": 3,
+    "converged": false,
+    "elapsed_seconds": 337.5
+  }
+]

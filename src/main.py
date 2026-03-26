@@ -100,6 +100,9 @@ def run_harness_loop(fn, fn_key, test_outcomes, repo_clone_dir, output_dir, idx,
     previous_attempts = []
     history = []
 
+    best_failures = len(fn_failures)
+    best_source = fn["source"]
+
     for iteration in range(max_iterations):
         print(f"    iteration {iteration + 1}/{max_iterations} ({len(fn_failures)} failure(s))...", end=" ", flush=True)
 
@@ -141,6 +144,20 @@ def run_harness_loop(fn, fn_key, test_outcomes, repo_clone_dir, output_dir, idx,
 
         if not fn_failures:
             print("converged")
+            break
+
+        # track best state seen; rollback if this fix made things worse
+        if len(fn_failures) < best_failures:
+            best_failures = len(fn_failures)
+            best_source = fixed_code
+        elif len(fn_failures) > best_failures:
+            replace_function_in_repo(fn, best_source, repo_clone_dir)
+            fn["source"] = best_source
+            print(f"{len(fn_failures)} failure(s) remain (reverted to best)", end=" ")
+
+        # stop early if failure count is not changing
+        if len(history) >= 2 and history[-1]["failures_count"] == history[-2]["failures_count"]:
+            print(f"{len(fn_failures)} failure(s) remain (stagnated)")
             break
         else:
             print(f"{len(fn_failures)} failure(s) remain")

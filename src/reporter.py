@@ -50,6 +50,8 @@ def parse_failures(test_outcomes):
         if test_type.endswith(".py"):
             test_type = test_type[:-len(".py")]
 
+        test_file_path = result.get("test_file_path", "")
+
         # handle actual test failures
         for i, test_name in enumerate(result.get("failed", [])):
             detail = {}
@@ -63,6 +65,7 @@ def parse_failures(test_outcomes):
             failures.append({
                 "function": fn_dir,
                 "test_file": test_filename,
+                "test_file_path": test_file_path,
                 "test_type": test_type,
                 "test_name": test_name,
                 "kind": "failure",
@@ -76,10 +79,16 @@ def parse_failures(test_outcomes):
             })
 
         # handle errors (import errors, collection errors, timeouts)
-        for error_name in result.get("errors", []):
+        for i, error_name in enumerate(result.get("errors", [])):
+            error_detail = {}
+            error_details_list = result.get("error_details", [])
+            if i < len(error_details_list):
+                error_detail = error_details_list[i]
+
             failures.append({
                 "function": fn_dir,
                 "test_file": test_filename,
+                "test_file_path": test_file_path,
                 "test_type": test_type,
                 "test_name": error_name,
                 "kind": "error",
@@ -88,7 +97,7 @@ def parse_failures(test_outcomes):
                 "actual": "",
                 "file": "",
                 "line": "",
-                "longrepr": "",
+                "longrepr": error_detail.get("longrepr", ""),
                 "stdout": result.get("stdout", ""),
                 "stderr": result.get("stderr", ""),
             })
