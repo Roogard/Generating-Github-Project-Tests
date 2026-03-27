@@ -51,6 +51,13 @@ Steps:
     def test_classify_none_positive():
         assert classify(-1, -1) == "none positive"
 
+## Critical: How to Write Assertions
+- Use the code structure to choose INPUTS that exercise each condition with both True and False values.
+- Derive EXPECTED OUTPUT from the function's name, signature, and general purpose — NOT by mentally tracing the code.
+- Think: "What SHOULD a correct implementation of a function named `{name}` return for this input?"
+- Do NOT trace the code to predict output. The code may contain bugs. Your job is to test what the function SHOULD do, using code structure only to pick inputs that hit every condition outcome.
+- If the function is named `flatten`, a correct flatten should yield plain values. If `mergesort`, it should return a sorted list. If `quicksort`, it should preserve duplicates. Use the function's name and purpose as your oracle.
+
 ## Instructions
 - Identify every boolean sub-expression in every condition in the function.
 - Ensure each sub-expression is True in at least one test and False in at least one test.

@@ -33,6 +33,21 @@ def write_fixed_function(fn, fixed_code, output_dir, index, iteration=None):
         f.write(fixed_code)
 
 
+def write_fix_artifacts(fn, output_dir, index, iteration, diagnosis="", diagnosis_context="", fix_context=""):
+    base = os.path.join(output_dir, "fixed_functions", f"{fn['name']}_{index}")
+    folder = os.path.join(base, f"iteration_{iteration}")
+    os.makedirs(folder, exist_ok=True)
+    if diagnosis:
+        with open(os.path.join(folder, "diagnosis.md"), "w", encoding="utf-8") as f:
+            f.write(diagnosis)
+    if diagnosis_context:
+        with open(os.path.join(folder, "diagnosis_context.md"), "w", encoding="utf-8") as f:
+            f.write(diagnosis_context)
+    if fix_context:
+        with open(os.path.join(folder, "fix_context.md"), "w", encoding="utf-8") as f:
+            f.write(fix_context)
+
+
 def replace_function_in_repo(fn, fixed_code, repo_clone_dir):
     file_path = os.path.join(repo_clone_dir, fn["file_path"])
     with open(file_path, "r", encoding="utf-8") as f:

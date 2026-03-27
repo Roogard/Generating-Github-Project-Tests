@@ -17,7 +17,7 @@ from src.agents import call_agent
 from src.runner import run_single_test
 from src.writer import write_meta, write_function, write_generated_tests
 from src.reporter import parse_failures
-from src.main import WHITEBOX_TYPES, BLACKBOX_TYPES, run_harness_loop
+from src.main import WHITEBOX_TYPES, BLACKBOX_TYPES, run_one_shot_fix
 
 
 def load_benchmark(path="data/benchmark_functions.json"):
@@ -125,15 +125,16 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
                 fix_iterations = 0
                 converged = False
                 if failures:
-                    fn_dir_name_loop = f"{fn['name']}_{idx}"
-                    final_outcomes, history = run_harness_loop(
-                        fn, fn_dir_name_loop, test_outcomes, tmp, repo_output, idx, config,
-                        max_iterations=3,
+                    fn_dir_name_fix = f"{fn['name']}_{idx}"
+                    final_outcomes, attempted = run_one_shot_fix(
+                        fn, fn_dir_name_fix, test_outcomes, tmp, repo_output, idx, config,
                     )
                     test_outcomes.update(final_outcomes)
                     failures = parse_failures(test_outcomes)
-                    fix_iterations = len(history)
-                    converged = bool(history) and history[-1]["failures_count"] == 0
+                    fix_iterations = 1 if attempted else 0
+                    converged = attempted and not any(
+                        f["function"] == fn_dir_name_fix for f in failures
+                    )
 
                 elapsed = time.time() - t0
 

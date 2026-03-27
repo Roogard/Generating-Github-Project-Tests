@@ -4,15 +4,16 @@
 
 This system generates unit tests for Python functions extracted from any GitHub repository, executes them against the real codebase, and reports test failures as potential bugs.
 
-The pipeline is **linear** — no iteration, no optimization loop:
+The pipeline generates tests, runs them, applies a single one-shot fix attempt per failing function, then reports:
 
 1. Clone the target repository and extract functions via tree-sitter
 2. For each function, generate 7 test types (4 whitebox + 3 blackbox) using LLM agents
 3. Write generated tests to disk
 4. Generate a `run_tests.sh` automation script
 5. Execute all tests against the real repo via pytest
-6. Parse failures and errors from pytest output
-7. Print a bug report with expected vs actual values
+6. For each function with failures: attempt a one-shot fix (diagnose + patch + re-run once)
+7. Parse failures and errors from final test results
+8. Print a bug report with expected vs actual values
 
 Test agents are loaded from `src/prompts/`. Drop a new `.md` prompt file to add a test type — no code changes needed.
 
@@ -48,6 +49,9 @@ main():
     for each test file:
         run_single_test (pytest)
     parse failures
+    for each function with failures:
+        run_one_shot_fix (diagnose + patch + re-run once)
+    re-parse failures from final outcomes
     print bug report
     write bug_report.txt
 ```
@@ -69,10 +73,13 @@ For each function, calls `call_agent(test_type, fn, config)` for all 7 types. Ea
 ### Step 5 — Execute Tests
 Loops over all `test_*.py` files under `generated_tests/`, runs each via `run_single_test(test_file, repo_clone_dir)`. Uses pytest with `--json-report` for structured results.
 
-### Step 6 — Parse Failures
-`parse_failures(test_outcomes)` extracts structured failure info from pytest JSON reports: test name, assertion expression, expected/actual values, file:line location.
+### Step 6 — One-Shot Fix Pass
+`run_one_shot_fix(fn, fn_key, ...)` is called once per function that has failures. It diagnoses the root cause (Stage 1 LLM call via `fix_diagnose.md`), generates a patch (Stage 2 LLM call via `fix_function.md`), validates the output is a real function (not a test file), writes the fix to disk, and re-runs all tests for that function once. No iteration, no rollback.
 
-### Step 7 — Bug Report
+### Step 7 — Parse Failures
+`parse_failures(test_outcomes)` extracts structured failure info from the final pytest JSON reports: test name, assertion expression, expected/actual values, file:line location.
+
+### Step 8 — Bug Report
 Prints and writes a formatted bug report grouped by function, showing each failure with type, location, expected vs actual values.
 
 ## 4. Output Structure
@@ -92,6 +99,13 @@ Prints and writes a formatted bug report grouped by function, showing each failu
             test_blackbox_bva.py
             test_blackbox_ecp.py
             test_blackbox_mutation.py
+    fixed_functions/              # only present when a fix was attempted
+        {fn_name}_0/
+            iteration_0/
+                fixed_function.py
+                diagnosis.md
+                diagnosis_context.md
+                fix_context.md
     automation/
         run_tests.sh
     bug_report.txt
@@ -101,35 +115,23 @@ Prints and writes a formatted bug report grouped by function, showing each failu
 
 ```
 src/
-├── main.py          # entry point + CLI args + linear pipeline
+├── main.py          # entry point + CLI args + pipeline + run_one_shot_fix
 ├── config.py        # config loader (ghtest.toml + env vars + CLI)
 ├── extractor.py     # clone repo + tree-sitter function extraction
-├── agents.py        # LLM factory + call_agent + call_agent_with_context
+├── agents.py        # LLM factory + call_agent + call_fix_agent
 ├── writer.py        # write output folders + generate automation script
 ├── runner.py        # execute generated tests with pytest
 ├── reporter.py      # parse test failures + format bug report
 └── prompts/         # drop a .md file here to add a test agent
-    ├── statement.md # statement coverage (whitebox)
-    ├── block.md     # block coverage (whitebox)
-    ├── condition.md # condition/MC/DC coverage (whitebox)
-    ├── path.md      # path coverage (whitebox)
-    ├── bva.md       # boundary value analysis (blackbox)
-    ├── ecp.md       # equivalence class partitioning (blackbox)
-    └── mutation.md  # mutation-style fault detection (blackbox)
-```
-
-### Legacy Modules (kept, not used by main pipeline)
-```
-src/
-├── harness.py       # iterative state machine + LLM supervisor (legacy)
-├── skills.py        # action handlers for harness (legacy)
-├── mutator.py       # AST mutants + mutation testing (legacy)
-├── memory.py        # ChromaDB memory system (legacy)
-└── prompts/
-    ├── fix.md       # test repair prompt (legacy)
-    ├── refine.md    # test refinement prompt (legacy)
-    ├── mutate.md    # LLM mutant generation prompt (legacy)
-    └── coverage.md  # coverage-guided generation prompt (legacy)
+    ├── statement.md    # statement coverage (whitebox)
+    ├── block.md        # block coverage (whitebox)
+    ├── condition.md    # condition/MC/DC coverage (whitebox)
+    ├── path.md         # path coverage (whitebox)
+    ├── bva.md          # boundary value analysis (blackbox)
+    ├── ecp.md          # equivalence class partitioning (blackbox)
+    ├── mutation.md     # mutation-style fault detection (blackbox)
+    ├── fix_diagnose.md # Stage 1: root cause diagnosis for one-shot fix
+    └── fix_function.md # Stage 2: patch generation for one-shot fix
 ```
 
 ## 6. Configuration
@@ -200,7 +202,7 @@ Copy `.env.example` to `.env` and fill in your API key before running locally.
 - **1D. Automation script** — Done. `run_tests.sh` for standalone test execution.
 
 ### Phase 2: Improvements
-- **2A. Fix pass** — Add optional single fix attempt: if tests fail due to import/syntax errors in generated code, re-call the LLM with the error output to fix the test.
+- **2A. Fix pass** — Done. One-shot fix: diagnose root cause + generate patch + re-run once per failing function.
 - **2B. Multi-language support** — Extend tree-sitter extraction and test runners beyond Python (JavaScript, TypeScript, Go).
 - **2C. Coverage measurement** — Optional coverage report alongside bug report.
 

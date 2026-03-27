@@ -37,8 +37,14 @@ Statement coverage is the most basic white-box criterion:
     def test_abs_val_positive():
         assert abs_val(3) == 3
 
+## Critical: How to Write Assertions
+- Use the code structure to choose INPUTS that exercise each statement.
+- Derive EXPECTED OUTPUT from the function's name, signature, and general purpose — NOT by mentally tracing the code.
+- Think: "What SHOULD a correct implementation of a function named `{name}` return for this input?"
+- Do NOT trace the code to predict output. The code may contain bugs. Your job is to test what the function SHOULD do, using code structure only to pick inputs that hit every statement.
+- If the function is named `flatten`, a correct flatten should yield plain values. If `mergesort`, it should return a sorted list. If `quicksort`, it should preserve duplicates. Use the function's name and purpose as your oracle.
+
 ## Instructions
 - Identify every executable statement in the function.
 - Write the minimum number of tests needed to execute all statements.
-- Each test should have precise assertions with exact expected values.
 - Derive import paths from the `file_path` field in the context.

@@ -5,10 +5,10 @@ import tomllib
 DEFAULTS = {
 
     "llm": {
-        "provider": "openai",
-        "model": "o4-mini",
+        "provider": "anthropic",
+        "model": "claude-sonnet-4-6",
         "base_url": "",
-        "api_key_env": "OPENAI_API_KEY",
+        "api_key_env": "ANTHROPIC_API_KEY",
     },
 
     "timeouts": {

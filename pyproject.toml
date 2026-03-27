@@ -8,10 +8,10 @@ dependencies = [
     "tree-sitter-python>=0.23",
     "python-dotenv>=1.0",
     "langchain-openai>=0.3",
+    "langchain-anthropic>=0.3",
 ]
 
 [project.optional-dependencies]
-anthropic = ["langchain-anthropic>=0.3"]
 swebench = ["swebench>=2.0", "datasets>=2.0"]
 
 [project.scripts]

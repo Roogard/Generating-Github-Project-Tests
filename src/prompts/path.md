@@ -59,6 +59,13 @@ Note: for functions with many branches, the number of paths can explode exponent
     def test_find_max_multiple():
         assert find_max([3, 1, 4, 1, 5]) == 5
 
+## Critical: How to Write Assertions
+- Use the code structure to choose INPUTS that exercise each path.
+- Derive EXPECTED OUTPUT from the function's name, signature, and general purpose — NOT by mentally tracing the code.
+- Think: "What SHOULD a correct implementation of a function named `{name}` return for this input?"
+- Do NOT trace the code to predict output. The code may contain bugs. Your job is to test what the function SHOULD do, using code structure only to pick inputs that hit every path.
+- If the function is named `flatten`, a correct flatten should yield plain values. If `mergesort`, it should return a sorted list. If `quicksort`, it should preserve duplicates. Use the function's name and purpose as your oracle.
+
 ## Instructions
 - Enumerate all distinct paths through the function before writing tests.
 - Each test should exercise exactly one path and be commented with that path.
