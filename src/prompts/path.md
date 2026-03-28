@@ -65,6 +65,14 @@ Note: for functions with many branches, the number of paths can explode exponent
 - Think: "What SHOULD a correct implementation of a function named `{name}` return for this input?"
 - Do NOT trace the code to predict output. The code may contain bugs. Your job is to test what the function SHOULD do, using code structure only to pick inputs that hit every path.
 - If the function is named `flatten`, a correct flatten should yield plain values. If `mergesort`, it should return a sorted list. If `quicksort`, it should preserve duplicates. Use the function's name and purpose as your oracle.
+- For sorting/collection functions, use Python's built-in `sorted()` as your oracle: `assert result == sorted(input)` is always correct regardless of implementation.
+
+## Property Assertions
+For each test that checks a return value, also include at least one property assertion that does not depend on knowing the exact expected value:
+- **Sorting functions**: `assert len(result) == len(input)` and `assert sorted(result) == sorted(input)` (same multiset, no drops)
+- **Flattening/generator functions**: `assert all(not isinstance(x, list) for x in result)` (no nested lists remain)
+- **Boolean predicates**: ensure both True and False outcomes are covered with unambiguous inputs
+- **Arithmetic functions**: assert algebraic invariants (e.g., `gcd(a, b)` divides both `a` and `b`)
 
 ## Instructions
 - Enumerate all distinct paths through the function before writing tests.

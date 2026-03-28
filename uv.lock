@@ -630,6 +630,7 @@ name = "generating-github-project-tests"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "langchain-anthropic" },
     { name = "langchain-core" },
     { name = "langchain-openai" },
     { name = "python-dotenv" },
@@ -638,9 +639,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-anthropic = [
-    { name = "langchain-anthropic" },
-]
 swebench = [
     { name = "datasets" },
     { name = "swebench" },
@@ -657,7 +655,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", marker = "extra == 'swebench'", specifier = ">=2.0" },
-    { name = "langchain-anthropic", marker = "extra == 'anthropic'", specifier = ">=0.3" },
+    { name = "langchain-anthropic", specifier = ">=0.3" },
     { name = "langchain-core", specifier = ">=0.3" },
     { name = "langchain-openai", specifier = ">=0.3" },
     { name = "python-dotenv", specifier = ">=1.0" },
@@ -665,7 +663,7 @@ requires-dist = [
     { name = "tree-sitter", specifier = ">=0.23" },
     { name = "tree-sitter-python", specifier = ">=0.23" },
 ]
-provides-extras = ["anthropic", "swebench"]
+provides-extras = ["swebench"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -46,6 +46,20 @@ BVA tests target the edges of valid and invalid input ranges:
     def test_clamp_above_upper_bound():
         assert clamp(11, 0, 10) == 10
 
+## Critical: How to Write Assertions
+- Derive EXPECTED OUTPUT from the function's **name, signature, and general purpose** — NOT by mentally tracing the implementation.
+- Think: "What SHOULD a correct implementation of a function named `{name}` return for this input?"
+- Do NOT trace the code to predict output. The code may contain bugs. If you run it mentally and accept its result as correct, you will encode the bug into the test.
+- Use the function's name and algorithm type as your oracle: if it's named `quicksort`, a correct sort preserves all elements including duplicates. If `flatten`, it should yield plain values. If `is_valid_parenthesization`, it must return False when depth is non-zero at the end.
+- For sorting/collection functions, use Python's built-in `sorted()` as your oracle: `assert result == sorted(input)` is always correct regardless of implementation.
+
+## Property Assertions
+For each test that checks a return value, also include at least one property assertion that does not depend on knowing the exact expected value:
+- **Sorting functions**: `assert len(result) == len(input)` and `assert sorted(result) == sorted(input)` (same multiset, no drops)
+- **Flattening/generator functions**: `assert all(not isinstance(x, list) for x in result)` (no nested lists remain)
+- **Boolean predicates**: ensure both True and False outcomes are covered with unambiguous inputs
+- **Arithmetic functions**: assert algebraic invariants (e.g., `gcd(a, b)` divides both `a` and `b`)
+
 ## Instructions
 - Cover **all** distinct input parameters with boundary tests.
 - If a parameter has no obvious numeric bound, use domain-specific knowledge (e.g., an age field: 0, 1, 120, 121).

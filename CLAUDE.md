@@ -210,3 +210,32 @@ Copy `.env.example` to `.env` and fill in your API key before running locally.
 - **3A. CI/CD integration** — `scripts/ci_check.py`: takes a git diff, extracts modified functions, runs pipeline, exits non-zero if bugs found.
 - **3B. GitHub Action** — Publishable action that runs the pipeline on PRs.
 - **3C. Test oracle export** — Consolidate strongest tests into a single file usable by repair tools.
+
+## Next Step
+
+### Fix the test oracle problem
+
+**The problem:** Test generation agents copy the buggy function's output and use it as the expected value. After the one-shot fix corrects the bug, those tests now fail against the *correct* code — killing convergence even when the fix is right. This was the primary failure mode in every non-converging run.
+
+**Root cause (from research):** This is a known issue in LLM test oracle generation. LLMs are systematically biased toward following the actual implementation rather than reasoning about intended behavior. The ECP and Path agents are the worst offenders.
+
+**Two concrete changes to make:**
+
+1. **Split oracle reasoning from input generation in prompts.** Rewrite the test generation prompts (especially `ecp.md`, `path.md`, `mutation.md`) to explicitly separate the two steps:
+   - Step 1: generate test inputs based on the function's name and standard algorithm behavior
+   - Step 2: fill in expected values by reasoning about what the function *should* return — explicitly without looking at the implementation
+
+   Add a hard constraint to every prompt: "Do NOT derive expected values by tracing through the implementation. Reason from the function's name, its algorithm type, and standard correctness properties."
+
+2. **Add property/invariant assertions alongside exact-value assertions.** Instead of only `assert quicksort([3,3,3]) == [3]`, also generate:
+   ```python
+   result = quicksort([3, 3, 3])
+   assert len(result) == 3                                   # length preserved
+   assert all(result[i] <= result[i+1] for i in range(len(result)-1))  # sorted
+   assert sorted(result) == sorted([3, 3, 3])               # same elements
+   ```
+   Property checks are immune to the oracle-copying problem — they don't require knowing the "right" answer, only that invariants hold.
+
+**Files to change:** `src/prompts/ecp.md`, `src/prompts/path.md`, `src/prompts/mutation.md`, `src/prompts/bva.md`, `src/prompts/statement.md`, `src/prompts/block.md`, `src/prompts/condition.md`
+
+**Expected outcome:** Test suites that correctly fail against buggy code AND pass against the fixed code, enabling the one-shot fix to converge.

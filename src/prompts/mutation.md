@@ -49,9 +49,23 @@ For each potential mutation, write a test that:
     def test_clamp_one_above_low():
         assert clamp(1, 0, 10) == 1
 
+## Critical: How to Write Assertions
+- Your tests must pass on a **CORRECT** implementation and fail on a buggy/mutated one.
+- Derive EXPECTED OUTPUT from the function's **name, signature, and general purpose** — NOT by mentally tracing the current implementation.
+- Think: "What SHOULD a correct implementation of `{name}` return for this input?" — then write that as the expected value.
+- Do NOT trace the code to predict output. The code you are given may already be buggy. If you accept its output as correct, your tests will pass on the bug and fail on the fix.
+- Use the function's name and algorithm type as your oracle: if it's a sort, a correct implementation preserves all elements including duplicates. If it's a validator, reason from the definition (e.g., balanced parens requires depth == 0 at the end, not just depth >= 0 throughout).
+
+## Property Assertions
+Where exact expected values are hard to reason about, add property assertions that must hold for any correct implementation:
+- **Sorting functions**: `assert sorted(result) == sorted(input)` (same multiset) and `assert len(result) == len(input)` (no drops)
+- **Flattening/generator functions**: `assert all(not isinstance(x, list) for x in result)`
+- **Boolean predicates**: test canonical True and False cases (e.g., `"()"` must be valid, `"("` must be invalid)
+- **Arithmetic functions**: assert algebraic invariants
+
 ## Instructions
 - For each conditional/arithmetic/comparison in the function, think about what common mutation could be applied.
 - Write a test with inputs NEAR boundaries so that the mutation changes the result.
-- Use EXACT expected values — approximate assertions will not detect mutations.
+- Use EXACT expected values derived from the function's specification, not from tracing the implementation.
 - Prioritize tests that would detect DIFFERENT mutations (maximize mutation coverage).
 - Derive import paths from the `file_path` field in the context.
