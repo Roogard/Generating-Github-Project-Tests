@@ -1,0 +1,7 @@
+Root Cause: The `greater` list comprehension uses `x > pivot` (strict inequality), which excludes elements equal to the pivot. Combined with the `lesser` list comprehension using `x < pivot` (also strict), elements equal to the pivot are filtered out from both partitions, and only a single instance of the pivot is included in the result via `[pivot]`. This causes all duplicate values equal to the pivot to be silently dropped.
+
+Suggestion 1: Include equal elements in the `lesser` partition
+Change the `lesser` list comprehension from `x < pivot` to `x <= pivot`. This ensures elements equal to the pivot are included in the lesser partition and will appear in the final sorted output alongside the pivot itself. (Note: this may require also adjusting the combination logic, but the minimal fix is to use `<=` so duplicates are not lost.)
+
+Suggestion 2: Include equal elements in the `greater` partition
+Change the `greater` list comprehension from `x > pivot` to `x >= pivot`. This ensures elements equal to the pivot are recurse into the greater partition and will appear in the final sorted output. The combination `lesser + [pivot] + greater` would then contain all occurrences of elements equal to the pivot.
