@@ -202,6 +202,35 @@ def call_fix_agent(fn, failures_for_fn, config, previous_attempts=None):
     return _FixResult(fixed or "", diagnosis, diagnosis_context, fix_context)
 
 
+def call_oracle_revision_agent(fn, test_code, failures, config):
+    system = (PROMPTS_DIR / "fix_oracle.md").read_text(encoding="utf-8")
+
+    parts = []
+    parts.append("## Fixed Function\n")
+    parts.append(f"```python\n{fn['source']}\n```\n")
+    parts.append("## Test File\n")
+    parts.append(f"```python\n{test_code}\n```\n")
+    parts.append("## Failing Tests\n")
+    for f in failures:
+        parts.append(f"- {f['test_name']}")
+        if f.get("expected"):
+            parts.append(f"  Expected: {f['expected']}")
+        if f.get("actual"):
+            parts.append(f"  Actual: {f['actual']}")
+        summary = _extract_error_summary(f)
+        if summary:
+            parts.append(f"  ```\n{summary}\n  ```")
+
+    user = "\n".join(parts)
+    llm = get_llm(config)
+    try:
+        response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
+        return response.content
+    except Exception as e:
+        print(f"  [agent:fix_oracle] error: {e}")
+        return ""
+
+
 class _FixResult(str):
     """str subclass that carries artifacts alongside the fixed code."""
     def __new__(cls, code, diagnosis="", diagnosis_context="", fix_context=""):

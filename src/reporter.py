@@ -139,13 +139,7 @@ def format_bug_report(failures, repo_url=""):
             kind_label = "FAIL" if f["kind"] == "failure" else "ERROR"
             lines.append(f"  [{kind_label}] {f['test_file']}::{f['test_name']}")
 
-            # categorize as whitebox or blackbox
-            if f["test_type"].startswith("whitebox_"):
-                category = "whitebox (" + f["test_type"][len("whitebox_"):] + ")"
-            elif f["test_type"].startswith("blackbox_"):
-                category = "blackbox (" + f["test_type"][len("blackbox_"):] + ")"
-            else:
-                category = f["test_type"]
+            category = f["test_type"]
             lines.append(f"    Type: {category}")
 
             if f["file"] or f["line"]:

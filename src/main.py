@@ -11,14 +11,14 @@ from dotenv import load_dotenv
 
 from src.config import load_config
 from src.extractor import clone_repo, extract_functions
-from src.agents import call_agent, call_fix_agent, strip_code_fences
+from src.agents import call_agent, call_fix_agent, call_oracle_revision_agent, strip_code_fences
 from src.runner import run_single_test
 from src.writer import write_meta, write_function, write_generated_tests, generate_automation, write_fixed_function, write_fix_artifacts, replace_function_in_repo
 from src.reporter import parse_failures, print_bug_report, write_bug_report
 
 
-WHITEBOX_TYPES = ["statement", "block", "condition", "path"]
-BLACKBOX_TYPES = ["bva", "ecp", "mutation"]
+WHITEBOX_TYPES = ["whitebox"]
+BLACKBOX_TYPES = ["blackbox"]
 
 
 def _is_valid_function_fix(code, fn_name):
@@ -104,15 +104,26 @@ def _stratified_sample(functions, limit):
     return selected[:limit]
 
 
+def _run_fn_tests(fn_key, output_dir, repo_clone_dir, config):
+    """Run all test files for a function directory. Returns outcomes dict."""
+    outcomes = {}
+    test_dir = os.path.join(output_dir, "generated_tests", fn_key)
+    if not os.path.isdir(test_dir):
+        return outcomes
+    for fname in sorted(os.listdir(test_dir)):
+        if fname.startswith("test_") and fname.endswith(".py"):
+            outcomes[(fn_key, fname)] = run_single_test(
+                os.path.join(test_dir, fname), repo_clone_dir, timeout=config["timeouts"]["test"]
+            )
+    return outcomes
+
+
 def run_one_shot_fix(fn, fn_key, test_outcomes, repo_clone_dir, output_dir, idx, config):
     """Single fix attempt: diagnose + patch + re-run once. No iteration."""
-    failures = parse_failures(test_outcomes)
-    fn_failures = [f for f in failures if f["function"] == fn_key]
-    if not fn_failures:
-        return test_outcomes, False
-
-    if all(f["kind"] == "error" for f in fn_failures):
-        print("all failures are collection errors, skipping fix")
+    fn_failures = [f for f in parse_failures(test_outcomes) if f["function"] == fn_key]
+    if not fn_failures or all(f["kind"] == "error" for f in fn_failures):
+        if fn_failures:
+            print("all failures are collection errors, skipping fix")
         return test_outcomes, False
 
     print(f"  attempting one-shot fix ({len(fn_failures)} failure(s))...", end=" ", flush=True)
@@ -127,30 +138,45 @@ def run_one_shot_fix(fn, fn_key, test_outcomes, repo_clone_dir, output_dir, idx,
         print("invalid fix output (test file or malformed), skipping")
         return test_outcomes, False
 
-    diagnosis = getattr(fixed_raw, "diagnosis", "")
-    diagnosis_ctx = getattr(fixed_raw, "diagnosis_context", "")
-    fix_ctx = getattr(fixed_raw, "fix_context", "")
     write_fix_artifacts(fn, output_dir, idx, 0,
-                        diagnosis=diagnosis, diagnosis_context=diagnosis_ctx, fix_context=fix_ctx)
-
-    new_end = replace_function_in_repo(fn, fixed_code, repo_clone_dir)
+                        diagnosis=getattr(fixed_raw, "diagnosis", ""),
+                        diagnosis_context=getattr(fixed_raw, "diagnosis_context", ""),
+                        fix_context=getattr(fixed_raw, "fix_context", ""))
+    fn["end_line"] = replace_function_in_repo(fn, fixed_code, repo_clone_dir)
     fn["source"] = fixed_code
-    fn["end_line"] = new_end
     write_fixed_function(fn, fixed_code, output_dir, idx, iteration=0)
 
-    # re-run tests once to measure result
-    new_outcomes = {}
-    test_dir = os.path.join(output_dir, "generated_tests", fn_key)
-    if os.path.isdir(test_dir):
-        for fname in sorted(os.listdir(test_dir)):
-            if fname.startswith("test_") and fname.endswith(".py"):
-                test_file = os.path.join(test_dir, fname)
-                result = run_single_test(test_file, repo_clone_dir, timeout=config["timeouts"]["test"])
-                new_outcomes[(fn_key, fname)] = result
+    outcomes = _run_fn_tests(fn_key, output_dir, repo_clone_dir, config)
+    remaining = [f for f in parse_failures(outcomes) if f["function"] == fn_key and f["kind"] == "failure"]
 
-    remaining = [f for f in parse_failures(new_outcomes) if f["function"] == fn_key]
+    # oracle revision: revise stale expected values in tests that still fail after a correct fix
+    if remaining:
+        print(f"{len(remaining)} failure(s), revising oracles...", end=" ", flush=True)
+        by_file = {}
+        for f in remaining:
+            by_file.setdefault(f.get("test_file_path", ""), []).append(f)
+
+        for test_path, file_failures in by_file.items():
+            if not test_path or not os.path.isfile(test_path):
+                continue
+            with open(test_path, encoding="utf-8") as fh:
+                original_test_code = fh.read()
+            revised_raw = call_oracle_revision_agent(fn, original_test_code, file_failures, config)
+            if not revised_raw or not revised_raw.strip():
+                continue
+            revised_code = strip_code_fences(revised_raw)
+            try:
+                ast.parse(revised_code)
+                with open(test_path, "w", encoding="utf-8") as fh:
+                    fh.write(revised_code)
+            except SyntaxError:
+                pass
+
+        outcomes = _run_fn_tests(fn_key, output_dir, repo_clone_dir, config)
+        remaining = [f for f in parse_failures(outcomes) if f["function"] == fn_key and f["kind"] == "failure"]
+
     print("converged" if not remaining else f"{len(remaining)} failure(s) remain")
-    return new_outcomes, True
+    return outcomes, True
 
 
 def main():

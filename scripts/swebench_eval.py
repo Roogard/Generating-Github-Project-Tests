@@ -19,7 +19,7 @@ from src.agents import call_agent
 from src.runner import run_single_test
 from src.writer import write_meta, write_function, write_generated_tests
 from src.reporter import parse_failures
-from src.main import WHITEBOX_TYPES, BLACKBOX_TYPES, run_harness_loop
+from src.main import WHITEBOX_TYPES, BLACKBOX_TYPES, run_one_shot_fix
 
 
 def load_swebench_instances(split="test", limit=0):
@@ -90,7 +90,7 @@ def generate_patch(original_content, fixed_content, file_path):
     return "".join(diff)
 
 
-def run_swebench_instance(instance, config, output_dir, max_iterations=3):
+def run_swebench_instance(instance, config, output_dir):
     instance_id = instance["instance_id"]
     repo_url = "https://github.com/" + instance["repo"]
     base_commit = instance["base_commit"]
@@ -148,17 +148,19 @@ def run_swebench_instance(instance, config, output_dir, max_iterations=3):
                         result = run_single_test(test_file, tmp, timeout=config["timeouts"]["test"])
                         test_outcomes[(fn_key, fname)] = result
 
-            # harness loop
+            # one-shot fix
             failures = parse_failures(test_outcomes)
             fn_failures = [f for f in failures if f["function"] == fn_key]
             if fn_failures:
-                print(f"    {len(fn_failures)} failure(s), running harness loop...")
-                final_outcomes, history = run_harness_loop(
+                print(f"    {len(fn_failures)} failure(s), running one-shot fix...")
+                final_outcomes, attempted = run_one_shot_fix(
                     fn, fn_key, test_outcomes, tmp, output_dir, idx, config,
-                    max_iterations=max_iterations,
                 )
-                converged = bool(history) and history[-1]["failures_count"] == 0
-                print(f"    {'converged' if converged else 'did not converge'} after {len(history)} iteration(s)")
+                if attempted:
+                    test_outcomes.update(final_outcomes)
+                remaining = [f for f in parse_failures(test_outcomes) if f["function"] == fn_key and f["kind"] == "failure"]
+                converged = attempted and not remaining
+                print(f"    {'converged' if converged else 'did not converge'}")
 
         # generate patches by comparing original vs current file contents
         for fpath, original_content in original_files.items():
@@ -187,7 +189,7 @@ def main():
     p.add_argument("--limit", type=int, default=5, help="Number of instances to evaluate (0 = all)")
     p.add_argument("--split", default="test", help="Dataset split")
     p.add_argument("--output", default="eval_output", help="Output directory")
-    p.add_argument("--max-iterations", type=int, default=3, dest="max_iterations", help="Max fix iterations")
+
     p.add_argument("--provider", default=None, help="LLM provider")
     p.add_argument("--model", default=None, help="LLM model name")
     args = p.parse_args()
@@ -217,7 +219,7 @@ def main():
         instance_output = os.path.join(run_dir, instance_id.replace("/", "__"))
         t0 = time.time()
 
-        result = run_swebench_instance(instance, config, instance_output, args.max_iterations)
+        result = run_swebench_instance(instance, config, instance_output)
         elapsed = time.time() - t0
 
         predictions.append({

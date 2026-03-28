@@ -61,6 +61,28 @@ For each test that checks a return value, also include at least one property ass
 - **Boolean predicates**: ensure both True and False outcomes are covered with unambiguous inputs
 - **Arithmetic functions**: assert algebraic invariants (e.g., `gcd(a, b)` divides both `a` and `b`)
 
+## STOP — Two-Phase Rule for Every Test
+For EACH test you write, follow these two steps IN ORDER:
+
+**Phase 1 (INPUTS):** Choose a representative value from each equivalence class.
+
+**Phase 2 (EXPECTED OUTPUT):** Determine the correct output from:
+- The function's name and what that algorithm is universally defined to do
+- Python builtins as reference oracles (`sorted()`, `len()`, `math.gcd()`)
+- Mathematical or logical properties that any correct implementation must satisfy
+
+If you cannot determine the correct output WITHOUT looking at the code, use ONLY property assertions for that test case. Never guess by tracing.
+
+## FORBIDDEN Patterns
+NEVER write comments or assertions that describe what the current code does. You must describe what a correct implementation SHOULD do.
+
+- **BAD:** `# The function returns True here (does not check final depth == 0)` → `assert result == True`
+- **BAD:** `# duplicates of pivot are dropped; only unique values survive` → `assert result == [5]`
+- **GOOD:** `# A correct parenthesization validator must return False for unmatched '('` → `assert result == False`
+- **GOOD:** `# A correct sort preserves all elements including duplicates` → `assert result == sorted(input)`
+
+If you catch yourself writing "the function does X" or "the implementation returns X", STOP — you are tracing the buggy code. Rewrite using "a correct `{name}` SHOULD return X".
+
 ## Instructions
 - Identify the complete set of equivalence classes for each input before writing tests.
 - Each class must have exactly **one** representative test — do not test multiple values from the same class.

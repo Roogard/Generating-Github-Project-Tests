@@ -104,26 +104,15 @@ def write_tests(fn, test_results, output_dir, index):
             f.write(content)
 
 
-WHITEBOX_TYPES = ["statement", "block", "condition", "path"]
-BLACKBOX_TYPES = ["bva", "ecp", "mutation"]
-
-
 def write_generated_tests(fn, generated_tests, output_dir, index):
     ext = LANG_EXT.get(fn["language"], "txt")
     folder = os.path.join(output_dir, "generated_tests", f"{fn['name']}_{index}")
     os.makedirs(folder, exist_ok=True)
 
     for test_type, code in generated_tests.items():
-        if not code.strip():
-            continue
-        if test_type in WHITEBOX_TYPES:
-            fname = f"test_whitebox_{test_type}.{ext}"
-        elif test_type in BLACKBOX_TYPES:
-            fname = f"test_blackbox_{test_type}.{ext}"
-        else:
-            fname = f"test_{test_type}.{ext}"
-        with open(os.path.join(folder, fname), "w", encoding="utf-8") as f:
-            f.write(code)
+        if code.strip():
+            with open(os.path.join(folder, f"test_{test_type}.{ext}"), "w", encoding="utf-8") as f:
+                f.write(code)
 
 
 def generate_automation(output_dir, repo_clone_dir):

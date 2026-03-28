@@ -63,6 +63,28 @@ Where exact expected values are hard to reason about, add property assertions th
 - **Boolean predicates**: test canonical True and False cases (e.g., `"()"` must be valid, `"("` must be invalid)
 - **Arithmetic functions**: assert algebraic invariants
 
+## STOP — Two-Phase Rule for Every Test
+For EACH test you write, follow these two steps IN ORDER:
+
+**Phase 1 (INPUTS):** Choose inputs near boundaries that would distinguish the correct operator/value from the mutated one.
+
+**Phase 2 (EXPECTED OUTPUT):** Determine the correct output from:
+- The function's name and what that algorithm is universally defined to do
+- Python builtins as reference oracles (`sorted()`, `len()`, `math.gcd()`)
+- Mathematical or logical properties that any correct implementation must satisfy
+
+IMPORTANT: The code you are looking at may ALREADY contain the exact mutations you are trying to catch. Do not assume the current implementation is correct. Derive expected values from the specification (function name + algorithm definition), never from the code.
+
+## FORBIDDEN Patterns
+NEVER write comments or assertions that describe what the current code does. You must describe what a correct implementation SHOULD do.
+
+- **BAD:** `# The function returns True here (does not check final depth == 0)` → `assert result == True`
+- **BAD:** `# duplicates of pivot are dropped; only unique values survive` → `assert result == [5]`
+- **GOOD:** `# A correct parenthesization validator must return False for unmatched '('` → `assert result == False`
+- **GOOD:** `# A correct sort preserves all elements including duplicates` → `assert result == sorted(input)`
+
+If you catch yourself writing "the function does X" or "the implementation returns X", STOP — you are tracing the buggy code. Rewrite using "a correct `{name}` SHOULD return X".
+
 ## Instructions
 - For each conditional/arithmetic/comparison in the function, think about what common mutation could be applied.
 - Write a test with inputs NEAR boundaries so that the mutation changes the result.

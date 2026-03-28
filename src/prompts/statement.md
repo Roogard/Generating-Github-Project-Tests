@@ -52,6 +52,30 @@ For each test that checks a return value, also include at least one property ass
 - **Boolean predicates**: ensure both True and False outcomes are covered with unambiguous inputs
 - **Arithmetic functions**: assert algebraic invariants (e.g., `gcd(a, b)` divides both `a` and `b`)
 
+## STOP — Two-Phase Rule for Every Test
+For EACH test you write, follow these two steps IN ORDER:
+
+**Phase 1 (INPUTS):** Use the code structure (branches, loops, conditions) to pick an input that hits the target statement/block/path.
+
+**Phase 2 (EXPECTED OUTPUT):** Now CLOSE the code. Determine the correct output from:
+- The function's name and what that algorithm is universally defined to do
+- Python builtins as reference oracles (`sorted()`, `len()`, `math.gcd()`)
+- Mathematical or logical properties that any correct implementation must satisfy
+
+If you cannot determine the correct output WITHOUT looking at the code, use ONLY property assertions for that test case. Never guess by tracing.
+
+## FORBIDDEN Patterns
+NEVER write comments or assertions that describe what the current code does. You must describe what a correct implementation SHOULD do.
+
+- **BAD:** `# The function returns True here (does not check final depth == 0)` → `assert result == True`
+- **BAD:** `# duplicates of pivot are dropped; only unique values survive` → `assert result == [5]`
+- **BAD:** `# yield flatten(x) yields generator objects, so we check structural properties`
+- **GOOD:** `# A correct parenthesization validator must return False for unmatched '('` → `assert result == False`
+- **GOOD:** `# A correct sort preserves all elements including duplicates` → `assert result == sorted(input)`
+- **GOOD:** `# A correct flatten yields scalar values, not generators` → `assert result == [1, 2, 3]`
+
+If you catch yourself writing "the function does X" or "the implementation returns X", STOP — you are tracing the buggy code. Rewrite using "a correct `{name}` SHOULD return X".
+
 ## Instructions
 - Identify every executable statement in the function.
 - Write the minimum number of tests needed to execute all statements.

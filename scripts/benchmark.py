@@ -124,16 +124,15 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
 
                 fix_iterations = 0
                 converged = False
-                if failures:
-                    fn_dir_name_fix = f"{fn['name']}_{idx}"
+                if any(f["kind"] == "failure" for f in failures):
                     final_outcomes, attempted = run_one_shot_fix(
-                        fn, fn_dir_name_fix, test_outcomes, tmp, repo_output, idx, config,
+                        fn, fn_dir_name, test_outcomes, tmp, repo_output, idx, config,
                     )
                     test_outcomes.update(final_outcomes)
                     failures = parse_failures(test_outcomes)
                     fix_iterations = 1 if attempted else 0
                     converged = attempted and not any(
-                        f["function"] == fn_dir_name_fix for f in failures
+                        f["function"] == fn_dir_name and f["kind"] == "failure" for f in failures
                     )
 
                 elapsed = time.time() - t0
@@ -141,6 +140,8 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
                 tests_passed = sum(len(r["passed"]) for r in test_outcomes.values())
                 tests_failed = sum(len(r["failed"]) for r in test_outcomes.values())
                 tests_errored = sum(len(r["errors"]) for r in test_outcomes.values())
+                assertion_failures = sum(1 for f in failures if f["kind"] == "failure")
+                success = converged or not entry.get("has_bug", True)
 
                 results.append({
                     "repo": repo_url,
@@ -152,9 +153,10 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
                     "tests_passed": tests_passed,
                     "tests_failed": tests_failed,
                     "tests_errored": tests_errored,
-                    "failures_count": len(failures),
+                    "failures_count": assertion_failures,
                     "fix_iterations": fix_iterations,
                     "converged": converged,
+                    "success": success,
                     "elapsed_seconds": round(elapsed, 1),
                 })
 
@@ -199,8 +201,10 @@ def run_benchmark(benchmark_path=None, output_dir="eval_output", limit=0):
         clean = [r for r in ok_results if r.get("has_bug") is False]
         bugs_detected = sum(1 for r in buggy if r["failures_count"] > 0 or r["tests_failed"] > 0)
         clean_passed = sum(1 for r in clean if r["tests_failed"] == 0 and r["tests_errored"] == 0)
+        success_count = sum(1 for r in ok_results if r.get("success"))
         print(f"\n  Bug detection rate: {bugs_detected}/{len(buggy)} buggy functions caught")
         print(f"  Clean control:      {clean_passed}/{len(clean)} clean functions passed")
+        print(f"  Success rate:       {success_count}/{len(ok_results)} (converged or no bug)")
 
         for tier in ["simple", "moderate", "complex"]:
             tier_results = [r for r in ok_results if r["difficulty"] == tier]
