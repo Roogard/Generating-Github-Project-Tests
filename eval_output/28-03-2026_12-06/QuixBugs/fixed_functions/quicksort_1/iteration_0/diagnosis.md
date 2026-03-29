@@ -1,7 +1,0 @@
-Root Cause: The partitioning uses strict `x < pivot` for `lesser` and strict `x > pivot` for `greater`, which means elements equal to the pivot (other than the pivot itself) are excluded from both partitions and never included in the result. Only the single pivot element is placed in the output via `[pivot]`, so all duplicate values are silently dropped.
-
-Suggestion 1: Include duplicates in the lesser partition using `<=`
-Change the lesser list comprehension from `x < pivot` to `x <= pivot`, and keep `x > pivot` for greater. This ensures all elements equal to the pivot are placed in `lesser` and preserved. However, the pivot must then not be added again separately — the return should become `lesser + greater` without `[pivot]` since pivot is already included in lesser.
-
-Suggestion 2: Collect equal elements into a separate `equal` list
-Introduce a third partition `equal = [x for x in arr if x == pivot]` (which includes the pivot itself and all duplicates), keep `lesser = quicksort([x for x in arr[1:] if x < pivot])` and `greater = quicksort([x for x in arr[1:] if x > pivot])`, and return `lesser + equal + greater`. This replaces `[pivot]` with the full `equal` list, preserving all duplicate occurrences.

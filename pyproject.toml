@@ -14,9 +14,6 @@ dependencies = [
 [project.optional-dependencies]
 swebench = ["swebench>=2.0", "datasets>=2.0"]
 
-[project.scripts]
-ghtest = "src.main:cli"
-
 [tool.uv]
 dev-dependencies = [
     "pytest>=8.0",

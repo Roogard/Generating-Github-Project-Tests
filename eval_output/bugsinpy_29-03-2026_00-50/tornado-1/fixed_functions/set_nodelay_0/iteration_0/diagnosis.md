@@ -1,0 +1,7 @@
+Root Cause: The `_make_handler` helper in the test attempts to directly assign `handler.settings = {}` on line 29, but `WebSocketHandler` (inheriting from `tornado.web.RequestHandler`) exposes `settings` as a read-only property with no setter, causing an `AttributeError` before any test logic is reached. This is a test infrastructure bug, not a bug in `set_nodelay` itself.
+
+Suggestion 1: Bypass the property using `__dict__` assignment
+Instead of `handler.settings = {}`, set the attribute directly on the instance's `__dict__` to bypass the property descriptor: change `handler.settings = {}` to `handler.__dict__['settings'] = {}`. This avoids the read-only property constraint while still making `settings` available as an instance attribute lookup.
+
+Suggestion 2: Mock the `settings` property at the class level using `patch`
+Use `unittest.mock.patch.object(WebSocketHandler, 'settings', new_callable=lambda: property(lambda self: {}))` (or a `PropertyMock`) as a context manager or decorator around the test/helper so that the `settings` property is replaced with one that accepts reads (and optionally writes) without raising. This avoids touching `__dict__` directly and keeps the mock clean and scoped to the test.

@@ -91,18 +91,6 @@ def replace_function_in_repo(fn, fixed_code, repo_clone_dir):
     return new_end
 
 
-def write_tests(fn, test_results, output_dir, index):
-    ext = LANG_EXT.get(fn["language"], "txt")
-    folder = os.path.join(output_dir, "test_cases", f"{fn['name']}_{index}")
-    os.makedirs(folder, exist_ok=True)
-
-    for test_type in ["statement", "block", "condition", "path", "bva", "ecp", "mutation"]:
-        content = test_results.get(f"{test_type}_tests", "")
-        if not content.strip():
-            continue
-        with open(os.path.join(folder, f"test_{test_type}.{ext}"), "w", encoding="utf-8") as f:
-            f.write(content)
-
 
 def write_generated_tests(fn, generated_tests, output_dir, index):
     ext = LANG_EXT.get(fn["language"], "txt")

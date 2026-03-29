@@ -37,7 +37,11 @@ def build_user_message(fn):
 
     msg += f"\n### Function source\n```{fn['language']}\n{fn['source']}\n```\n"
     import_path = fn["file_path"].replace("\\", "/").replace("/", ".").replace(".py", "")
-    msg += f"\n**Import path (use exactly):** `from {import_path} import {fn['name']}`\n"
+    if fn.get("class_name"):
+        msg += f"\n**Import path (use exactly):** `from {import_path} import {fn['class_name']}`\n"
+        msg += f"**Note:** `{fn['name']}` is a method/staticmethod on `{fn['class_name']}`. Access it via the class, not as a module-level import.\n"
+    else:
+        msg += f"\n**Import path (use exactly):** `from {import_path} import {fn['name']}`\n"
     msg += "\nGenerate tests now. Return only the test code."
     return msg
 
@@ -48,7 +52,7 @@ def call_agent(prompt_name, fn, config):
     llm = get_llm(config)
     try:
         response = llm.invoke([SystemMessage(content=system), HumanMessage(content=user)])
-        return response.content
+        return _extract_code(response.content)
     except Exception as e:
         print(f"  [agent:{prompt_name}] error: {e}")
         return ""
@@ -75,6 +79,28 @@ def strip_code_fences(code):
     if lines and lines[-1].strip() == "```":
         lines = lines[:-1]
     return "\n".join(lines)
+
+
+_PYTHON_STARTERS = (
+    "import ", "from ", "def ", "class ", "async def ",
+    "@", "#", "pytest", "import\t",
+)
+
+
+def _extract_code(text):
+    """Extract Python code from an LLM response, stripping prose and markdown fences."""
+    if not text:
+        return text
+    import re
+    m = re.search(r'```(?:python)?\n(.*?)```', text.strip(), re.DOTALL)
+    if m:
+        return m.group(1).strip()
+    lines = text.strip().splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped and any(stripped.startswith(p) for p in _PYTHON_STARTERS):
+            return "\n".join(lines[i:]).strip()
+    return text.strip()
 
 
 def _truncate_error(text, max_lines=30):
@@ -173,7 +199,7 @@ def call_fix_agent(fn, failures_for_fn, config, previous_attempts=None):
     diagnosis_context = _build_diagnosis_context(fn, failures_for_fn, previous_attempts)
     diagnosis = call_diagnose_agent(fn, failures_for_fn, config, previous_attempts)
     if not diagnosis or not diagnosis.strip():
-        return _FixResult("", "", diagnosis_context, "")
+        return {"code": "", "diagnosis": "", "diagnosis_context": diagnosis_context, "fix_context": ""}
 
     # Stage 2: generate patch from diagnosis
     parts = []
@@ -199,7 +225,7 @@ def call_fix_agent(fn, failures_for_fn, config, previous_attempts=None):
     fix_context = "\n".join(parts)
     fixed = call_agent_with_context("fix_function", fn, fix_context, config)
 
-    return _FixResult(fixed or "", diagnosis, diagnosis_context, fix_context)
+    return {"code": fixed or "", "diagnosis": diagnosis, "diagnosis_context": diagnosis_context, "fix_context": fix_context}
 
 
 def call_oracle_revision_agent(fn, test_code, failures, config):
@@ -231,11 +257,3 @@ def call_oracle_revision_agent(fn, test_code, failures, config):
         return ""
 
 
-class _FixResult(str):
-    """str subclass that carries artifacts alongside the fixed code."""
-    def __new__(cls, code, diagnosis="", diagnosis_context="", fix_context=""):
-        obj = str.__new__(cls, code)
-        obj.diagnosis = diagnosis
-        obj.diagnosis_context = diagnosis_context
-        obj.fix_context = fix_context
-        return obj

@@ -1,0 +1,7 @@
+Root Cause: When `disable=None` is passed and the condition `disable is None and hasattr(file, "isatty") and not file.isatty()` evaluates to `False` (e.g., because the file is a TTY), `disable` remains `None` instead of being set to `False`. The code never explicitly converts `disable=None` to `False` when the bar should be active, so `self.disable` ends up stored as `None`. Additionally, in `format_meter`, when `unit_scale` is a numeric value like `1024`, `total` (which is `None`) is multiplied by `unit_scale`, causing a `TypeError`.
+
+Suggestion 1: Convert `disable=None` to `False` after the TTY check
+After the block `if disable is None and hasattr(file, "isatty") and not file.isatty(): disable = True`, add an additional line: if `disable is None`, set `disable = False`. This ensures that when `disable=None` doesn't trigger the non-TTY early-exit, it is normalized to `False` before being stored as `self.disable`.
+
+Suggestion 2: Normalize `disable` to `False` before storing it
+Just before `self.disable = disable` (in the "Store the arguments" section), add a check: if `disable is None`, set `disable = False`. This is a minimal, targeted fix that ensures `self.disable` is always a proper boolean (`True` or `False`) rather than `None` when the progress bar is active. For the `unit_scale` / `total` bug in `format_meter`, guard the `total *= unit_scale` line (around line 267) so it only executes when `total is not None`.

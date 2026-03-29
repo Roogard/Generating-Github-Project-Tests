@@ -1,0 +1,7 @@
+Root Cause: The `make_line` helper function tries to directly assign `line.is_import = is_import` on a `Line` instance created via `Line.__new__(Line)`, but `is_import` is a property on `Line` with no setter (it's a computed/read-only property), causing an `AttributeError` on every test that calls `make_line`.
+
+Suggestion 1: Mock `is_import` as a property on the instance using `type(line)`
+Instead of assigning `line.is_import = is_import` directly, patch the `is_import` property on the specific instance's class or use `unittest.mock.PropertyMock`. Change `make_line` to use `type(line).is_import = PropertyMock(return_value=is_import)` — but since this modifies the class, a better approach is to create a subclass or mock the property per-instance by patching `Line.is_import` with `patch.object(type(line), 'is_import', new_callable=PropertyMock)` and setting its return value before using the line object.
+
+Suggestion 2: Use a MagicMock for the entire `Line` instance instead of `Line.__new__(Line)`
+Instead of `Line.__new__(Line)` (which creates a real `Line` object with its property descriptors), create a `MagicMock(spec=Line)` and manually set `line.leaves`, `line.is_import`, and `line.remove_trailing_comma`. Then bind the actual method to it using `line.maybe_remove_trailing_comma = lambda closing: Line.maybe_remove_trailing_comma(line, closing)`. This avoids the property setter restriction entirely since `MagicMock` attributes are freely settable.

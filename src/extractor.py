@@ -69,29 +69,43 @@ def extract_functions(repo_path):
             tree = PARSERS[language].parse(source_bytes)
             query = LANGUAGES[language].query(FUNCTION_QUERIES[language])
             cursor = QueryCursor(query)
-            captures = cursor.captures(tree.root_node)
 
             imports = get_imports(source_bytes, language)
             rel_path = os.path.relpath(path, repo_path)
 
-            fn_nodes = captures.get("fn", [])
-            fn_name_nodes = captures.get("fn_name", [])
-
             seen = set()
-            for fn_node, name_node in zip(fn_nodes, fn_name_nodes):
+            for _pattern_idx, match_captures in cursor.matches(tree.root_node):
+                fn_list = match_captures.get("fn", [])
+                name_list = match_captures.get("fn_name", [])
+                if not fn_list or not name_list:
+                    continue
+                fn_node = fn_list[0]
+                name_node = name_list[0]
                 span = (fn_node.start_byte, fn_node.end_byte)
                 if span in seen:
                     continue
                 seen.add(span)
 
+                class_name = None
+                parent = fn_node.parent
+                while parent is not None:
+                    if parent.type == "class_definition":
+                        for child in parent.children:
+                            if child.type == "identifier":
+                                class_name = source_bytes[child.start_byte:child.end_byte].decode(errors="replace")
+                                break
+                        break
+                    parent = parent.parent
+
                 functions.append({
-                    "name": source_bytes[name_node.start_byte:name_node.end_byte].decode(),
-                    "source": source_bytes[fn_node.start_byte:fn_node.end_byte].decode(),
+                    "name": source_bytes[name_node.start_byte:name_node.end_byte].decode(errors="replace"),
+                    "source": source_bytes[fn_node.start_byte:fn_node.end_byte].decode(errors="replace"),
                     "language": language,
                     "file_path": rel_path,
                     "imports": imports,
                     "start_line": fn_node.start_point[0] + 1,
                     "end_line": fn_node.end_point[0] + 1,
+                    "class_name": class_name,
                 })
 
     return functions
@@ -109,6 +123,6 @@ def get_imports(source_bytes, language):
 
     lines = []
     for node in captures.get("imp", []):
-        lines.append(source_bytes[node.start_byte:node.end_byte].decode())
+        lines.append(source_bytes[node.start_byte:node.end_byte].decode(errors="replace"))
 
     return "\n".join(lines)

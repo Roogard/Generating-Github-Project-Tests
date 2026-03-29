@@ -64,6 +64,13 @@ IMPORTANT: Some paths/branches may only exist BECAUSE of a bug. Write assertions
 
 If you catch yourself writing "the function does X" or "the implementation returns X", STOP — rewrite using "a correct `{name}` SHOULD return X".
 
+## Mocking Rules
+- Mock only truly external dependencies: network calls, slow I/O, third-party services, or filesystem writes to paths outside the repo.
+- Do NOT mock: standard library internals (asyncio event loops, threading, multiprocessing executors), the function under test's own helper methods, or real data structures the function is designed to work with.
+- Prefer real objects: pass a real list, dict, string, or simple data class rather than a Mock().
+- If you must mock a complex object, test the actual control flow — not just that mocks were called with the right arguments.
+- Never replace the core logic under test with a mock and then assert the mock was called. That tests nothing about the function's correctness.
+
 ## Instructions
 - Derive import paths from the `file_path` field in the context.
 - One file, four sections. Skip any section if the function is too simple for it to add new tests.

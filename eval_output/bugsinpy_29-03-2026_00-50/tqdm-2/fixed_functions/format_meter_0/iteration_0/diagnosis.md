@@ -1,0 +1,7 @@
+Root Cause: The function returns `None` in the `if total:` branch when `ncols` is not 0 and the bar is rendered — specifically, after computing `res = bar_format.format(bar=full_bar, **format_dict)`, the code only returns `disp_trim(res, ncols)` when `ncols` is truthy, but when `ncols` is `None` (falsy), there is no `return` statement, causing the function to fall through and implicitly return `None`.
+
+Suggestion 1: Add a return statement for the `ncols=None` case in the `if total:` branch
+After the line `res = bar_format.format(bar=full_bar, **format_dict)`, change the conditional so that when `ncols` is falsy (None), `res` is still returned. Replace `if ncols: return disp_trim(res, ncols)` with `return disp_trim(res, ncols) if ncols else res` — i.e., always return `res` (possibly trimmed), rather than only returning when `ncols` is set.
+
+Suggestion 2: Add an unconditional `return res` after the `if ncols:` block in the `if total:` branch
+After the existing `if ncols: return disp_trim(res, ncols)` line inside the `if total:` block, add a plain `return res` on the next line. This ensures that when `ncols` is `None` or `0` (and the bar was rendered), the result is still returned instead of falling through to `None`.
