@@ -1,7 +1,0 @@
-Root Cause: The tests use `assert args[1] is pc._run` to check that the exact same bound method object is passed to `add_timeout`. In Python 3, bound methods are created fresh on each attribute access, so `pc._run` retrieved at call time and `pc._run` retrieved during the assertion are two different objects (even though they wrap the same function), causing the identity check `is` to fail. The function itself is logically correct — it passes `self._run` — but each access to `self._run` creates a new bound method object, so `args[1] is pc._run` is always `False`.
-
-Suggestion 1: Use equality comparison instead of identity check in the tests
-Change the assertion `assert args[1] is pc._run` to `assert args[1] == pc._run` in both `test_callback_is_run_method` and `test_mutation_wrong_callback_to_add_timeout`. Bound methods in Python 3 support `==` comparison (they compare equal if they wrap the same function and instance), so this will correctly verify the right method is passed without requiring identity.
-
-Suggestion 2: Cache `pc._run` before the call and compare against the cached reference
-In the test, store `expected_run = pc._run` before calling `pc._schedule_next()`, then assert `args[1] == expected_run` (or `args[1].__func__ is expected_run.__func__`). This avoids the stale-reference problem by capturing the bound method once and comparing against that single captured value, though equality (`==`) is still preferable over `is` for bound methods.

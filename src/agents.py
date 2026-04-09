@@ -11,7 +11,7 @@ def get_llm(config):
     model = config["llm"]["model"]
     base_url = config["llm"]["base_url"]
     api_key_env = config["llm"]["api_key_env"]
-    api_key = os.environ.get(api_key_env, "") if api_key_env else ""
+    api_key = config["llm"].get("api_key") or (os.environ.get(api_key_env, "") if api_key_env else "")
 
     if provider == "anthropic":
         from langchain_anthropic import ChatAnthropic
@@ -31,6 +31,9 @@ def build_user_message(fn):
     msg = f"## Function: `{fn['name']}`\n"
     msg += f"**Language:** {fn['language']}\n"
     msg += f"**File:** `{fn['file_path']}`\n"
+
+    if fn.get("description"):
+        msg += f"\n### Description\n{fn['description']}\n"
 
     if fn.get("imports"):
         msg += f"\n### Imports\n```\n{fn['imports']}\n```\n"
@@ -226,6 +229,48 @@ def call_fix_agent(fn, failures_for_fn, config, previous_attempts=None):
     fixed = call_agent_with_context("fix_function", fn, fix_context, config)
 
     return {"code": fixed or "", "diagnosis": diagnosis, "diagnosis_context": diagnosis_context, "fix_context": fix_context}
+
+
+def generate_with_critique(fn, config, coverage_info=None):
+    """Generate tests then optionally run an LLM critic to target uncovered lines.
+
+    If coverage_info is None, behaves identically to calling call_agent twice.
+
+    Returns:
+        {
+            "whitebox":     str,
+            "blackbox":     str,
+            "critique":     str,
+            "critic_error": str | None,
+        }
+    """
+    code_wb = call_agent("whitebox", fn, config)
+    code_bb = call_agent("blackbox", fn, config)
+
+    critique = ""
+    critic_error = None
+
+    if coverage_info is not None:
+        from src.critic import call_critic_agent
+        result = call_critic_agent(
+            fn,
+            {"whitebox": code_wb, "blackbox": code_bb},
+            coverage_info,
+            config,
+        )
+        critic_error = result.get("error")
+        if not critic_error:
+            critique = result.get("critique", "")
+            improved = result.get("improved_code", {})
+            code_wb = improved.get("whitebox") or code_wb
+            code_bb = improved.get("blackbox") or code_bb
+
+    return {
+        "whitebox": code_wb,
+        "blackbox": code_bb,
+        "critique": critique,
+        "critic_error": critic_error,
+    }
 
 
 def call_oracle_revision_agent(fn, test_code, failures, config):

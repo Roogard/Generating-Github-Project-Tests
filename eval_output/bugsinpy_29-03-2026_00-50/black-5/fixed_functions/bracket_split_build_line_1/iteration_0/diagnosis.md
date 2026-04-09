@@ -1,9 +1,0 @@
-Root Cause: The `result.append(comment_after, preformatted=True)` call in the populate loop is not adding the comment leaf to `result.leaves` — instead, the `Line.append` method with `preformatted=True` appears to store comments in a separate `comments` dict rather than in `leaves`. The real bug is that `comment_after` leaves returned by `original.comments_after(leaf)` are being appended as comments (stored in `Line.comments`) rather than as regular leaves in `Line.leaves`, because `Line.append` recognizes comment tokens and routes them differently regardless of `preformatted`.
-
-Looking at the error: the comment leaf `Leaf(COMMENT, '# hi')` ends up in `Line.comments` dict but not in `Line.leaves`. This means `original.comments_after(leaf)` returns actual `COMMENT`-type leaves, and `Line.append` treats them as comments rather than regular leaves.
-
-Suggestion 1: Use a different append mechanism for comments
-Instead of calling `result.append(comment_after, preformatted=True)`, directly append the comment leaf to `result.leaves` list (bypassing `Line.append`'s comment-routing logic), so that comment leaves from `original.comments_after()` are stored in `result.leaves` rather than `result.comments`.
-
-Suggestion 2: Use `result.append` with the comment leaf added to result's internal comments dict manually
-Change the inner loop to add `comment_after` directly via `result.leaves.append(comment_after)` instead of `result.append(comment_after, preformatted=True)`, so the comment leaf is placed in `result.leaves` in sequence with the other leaves rather than being routed to the `comments` dictionary by `Line.append`'s internal comment-detection logic.

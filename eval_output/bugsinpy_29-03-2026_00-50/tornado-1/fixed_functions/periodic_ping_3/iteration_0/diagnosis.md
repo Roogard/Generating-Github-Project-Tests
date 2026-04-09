@@ -1,7 +1,0 @@
-Root Cause: The bug is in the first `if` condition: `if self.is_closing() and self.ping_callback is not None:`. When `is_closing()` returns `True` but `ping_callback` is `None`, the condition is `False`, so the early `return` is never executed, and the function falls through to call `write_ping(b"")`. The correct behavior when `is_closing()` is `True` should be to always return early (stopping the callback if it exists), but the current code only returns when both conditions are true.
-
-Suggestion 1: Split the is_closing check from the ping_callback check
-Change the single compound `if` into two nested checks: first check `if self.is_closing():` and return early unconditionally, but only call `self.ping_callback.stop()` inside if `self.ping_callback is not None`. This ensures the function always returns when closing, regardless of whether a callback exists.
-
-Suggestion 2: Use a separate guard for is_closing
-Replace the combined condition `if self.is_closing() and self.ping_callback is not None:` with two separate statements: first `if self.is_closing():` as the outer guard that triggers the early return, and inside it `if self.ping_callback is not None: self.ping_callback.stop()` before the `return`. This way `return` is reached whenever `is_closing()` is `True`, fixing the fall-through when `ping_callback` is `None`.
