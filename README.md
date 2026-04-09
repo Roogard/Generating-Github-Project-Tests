@@ -1,3 +1,5 @@
+uvicorn api.app:app --reload
+
 # GitHub Project Test Generator
 
 An agentic pipeline that clones a GitHub repo, extracts Python functions, generates unit tests using an LLM, runs them, and attempts to automatically fix any bugs it finds. Evaluated on BugsInPy with Claude Sonnet: **68% bug detection rate, 100% fix rate** on detected bugs. The main challenge was that the LLM sometimes wrote tests around the buggy behavior — tests that passed on broken code but failed once the fix was applied — requiring an oracle revision step after each fix.
