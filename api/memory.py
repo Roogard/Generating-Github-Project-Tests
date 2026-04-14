@@ -5,7 +5,7 @@ Current status: stubs that return correctly-shaped responses.
 ChromaDB wiring is a TODO once Page 3 is prioritised.
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/memory", tags=["memory"])
@@ -42,7 +42,6 @@ def embed_pattern(body: EmbedRequest):
 
     TODO: wire up ChromaDB (chromadb.PersistentClient).
     """
-    # Stub: return a fake pattern_id until ChromaDB is wired
     import uuid
     return {"status": "embedded", "pattern_id": str(uuid.uuid4())}
 
@@ -56,7 +55,6 @@ def get_similar(function_source: str, k: int = 5):
 
     TODO: wire up ChromaDB query.
     """
-    # Stub: return an empty list until ChromaDB is wired
     return []
 
 
@@ -66,7 +64,6 @@ def list_patterns():
 
     TODO: wire up chromadb collection.get().
     """
-    # Stub: return an empty list until ChromaDB is wired
     return []
 
 
@@ -76,5 +73,4 @@ def delete_pattern(pattern_id: str):
 
     TODO: wire up chromadb collection.delete().
     """
-    # Stub: always succeeds
     return

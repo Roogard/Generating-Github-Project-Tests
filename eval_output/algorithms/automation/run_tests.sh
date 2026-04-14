@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -e
 
-REPO_DIR="C:\Users\roota\AppData\Local\Temp\tmp71qptlcs"
+REPO_DIR="C:\Users\roota\AppData\Local\Temp\tmpbtmfse96"
 TEST_DIR="C:\Users\roota\OneDrive\Desktop\Projects\Generating-Github-Project-Tests\eval_output\algorithms\generated_tests"
 
 export PYTHONPATH="$REPO_DIR:$PYTHONPATH"

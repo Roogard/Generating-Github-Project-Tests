@@ -3,6 +3,7 @@ from sqlalchemy import Integer, String, Float, Text, DateTime, Boolean, ForeignK
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.db import Base
+from api.constants import RunStatus, FixStatus
 
 
 class Run(Base):
@@ -11,7 +12,7 @@ class Run(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     repo_url: Mapped[str] = mapped_column(String, nullable=False)
     function_name: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, default="pending")  # pending | running | done | error
+    status: Mapped[str] = mapped_column(String, default=RunStatus.PENDING)
     config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     output_dir: Mapped[str | None] = mapped_column(String, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -40,7 +41,7 @@ class GeneratedTest(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     function_id: Mapped[int] = mapped_column(Integer, ForeignKey("functions.id"), nullable=False)
-    test_type: Mapped[str] = mapped_column(String, nullable=False)   # whitebox | blackbox
+    test_type: Mapped[str] = mapped_column(String, nullable=False)
     code: Mapped[str | None] = mapped_column(Text, nullable=True)
     iteration: Mapped[int] = mapped_column(Integer, default=0)
     coverage_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -57,7 +58,7 @@ class ProposedFix(Base):
     function_id: Mapped[int] = mapped_column(Integer, ForeignKey("functions.id"), nullable=False)
     fixed_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     diagnosis: Mapped[str | None] = mapped_column(Text, nullable=True)
-    status: Mapped[str] = mapped_column(String, default="proposed")  # proposed | accepted | rejected
+    status: Mapped[str] = mapped_column(String, default=FixStatus.PROPOSED)
 
     function: Mapped["Function"] = relationship("Function", back_populates="proposed_fixes")
 
@@ -71,7 +72,7 @@ class BenchmarkRun(Base):
     provider: Mapped[str] = mapped_column(String, nullable=False)
     project: Mapped[str] = mapped_column(String, nullable=False)
     bug_id: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)  # detected | missed | error
+    status: Mapped[str] = mapped_column(String, nullable=False)
     tests_passed: Mapped[int] = mapped_column(Integer, default=0)
     tests_failed: Mapped[int] = mapped_column(Integer, default=0)
     fix_attempted: Mapped[bool] = mapped_column(Boolean, default=False)

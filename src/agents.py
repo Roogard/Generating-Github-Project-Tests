@@ -1,9 +1,21 @@
 import os
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 from langchain_core.messages import SystemMessage, HumanMessage
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
+
+# Prompt files are static — cache reads across the many LLM calls per run
+_PROMPT_CACHE: dict[str, str] = {}
+
+
+def _load_prompt(name: str) -> str:
+    cached = _PROMPT_CACHE.get(name)
+    if cached is None:
+        cached = (PROMPTS_DIR / f"{name}.md").read_text(encoding="utf-8")
+        _PROMPT_CACHE[name] = cached
+    return cached
 
 
 def get_llm(config):
@@ -50,7 +62,7 @@ def build_user_message(fn):
 
 
 def call_agent(prompt_name, fn, config):
-    system = (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
+    system = _load_prompt(prompt_name)
     user = build_user_message(fn)
     llm = get_llm(config)
     try:
@@ -62,7 +74,7 @@ def call_agent(prompt_name, fn, config):
 
 
 def call_agent_with_context(prompt_name, fn, extra_context, config):
-    system = (PROMPTS_DIR / f"{prompt_name}.md").read_text(encoding="utf-8")
+    system = _load_prompt(prompt_name)
     user = build_user_message(fn) + "\n\n" + extra_context
     llm = get_llm(config)
     try:
@@ -112,7 +124,7 @@ def _truncate_error(text, max_lines=30):
     lines = text.strip().splitlines()
     if len(lines) <= max_lines:
         return text.strip()
-    # keep first 10 and last 20 lines (the tail usually has the actual error)
+    # Tail lines contain the actual pytest error; head gives a little setup context
     return "\n".join(lines[:10] + ["  ...truncated..."] + lines[-20:])
 
 
@@ -186,7 +198,7 @@ def _build_diagnosis_context(fn, failures_for_fn, previous_attempts=None):
 
 def call_diagnose_agent(fn, failures_for_fn, config, previous_attempts=None):
     context = _build_diagnosis_context(fn, failures_for_fn, previous_attempts)
-    system = (PROMPTS_DIR / "fix_diagnose.md").read_text(encoding="utf-8")
+    system = _load_prompt("fix_diagnose")
     user = build_user_message(fn) + "\n\n" + context
     llm = get_llm(config)
     try:
@@ -244,8 +256,12 @@ def generate_with_critique(fn, config, coverage_info=None):
             "critic_error": str | None,
         }
     """
-    code_wb = call_agent("whitebox", fn, config)
-    code_bb = call_agent("blackbox", fn, config)
+    # whitebox/blackbox are independent — run concurrently
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        fut_wb = ex.submit(call_agent, "whitebox", fn, config)
+        fut_bb = ex.submit(call_agent, "blackbox", fn, config)
+        code_wb = fut_wb.result()
+        code_bb = fut_bb.result()
 
     critique = ""
     critic_error = None
@@ -274,7 +290,7 @@ def generate_with_critique(fn, config, coverage_info=None):
 
 
 def call_oracle_revision_agent(fn, test_code, failures, config):
-    system = (PROMPTS_DIR / "fix_oracle.md").read_text(encoding="utf-8")
+    system = _load_prompt("fix_oracle")
 
     parts = []
     parts.append("## Fixed Function\n")

@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from api.db import get_db, SessionLocal
 from api.models import Run, Function, GeneratedTest, ProposedFix
+from api.constants import RunStatus
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -19,10 +21,10 @@ class RunRequest(BaseModel):
     model: str | None = None
     preset: str = "default"
     install_deps: bool = True
-    api_key: str = ""  # user's LLM API key; overrides .env when provided
+    api_key: str = ""
 
     def effective_model(self) -> str | None:
-        """Return None if model is blank/placeholder so the pipeline uses its default."""
+        # FastAPI/Swagger sends the literal "string" as a placeholder — treat it as blank
         if not self.model or not self.model.strip() or self.model.strip().lower() == "string":
             return None
         return self.model
@@ -33,6 +35,45 @@ class RunRequest(BaseModel):
         return self.api_key.strip()
 
 
+def _persist_results(db: Session, run_id: int, result: dict) -> None:
+    fn_record = Function(run_id=run_id, name=result["fn_name"], file_path=result["fn_file"])
+    db.add(fn_record)
+    db.flush()
+
+    fn_key = f"{result['fn_name']}_0"
+    test_dir = os.path.join(result["output_dir"], "generated_tests", fn_key)
+    if os.path.isdir(test_dir):
+        for fname in sorted(os.listdir(test_dir)):
+            if not (fname.startswith("test_") and fname.endswith(".py")):
+                continue
+            test_type = fname[len("test_"):-len(".py")]
+            with open(os.path.join(test_dir, fname), encoding="utf-8") as fh:
+                code = fh.read()
+            outcome = result["test_outcomes"].get(str((fn_key, fname)), {})
+            db.add(GeneratedTest(
+                function_id=fn_record.id, test_type=test_type, code=code,
+                passed=len(outcome.get("passed", [])),
+                failed=len(outcome.get("failed", [])),
+            ))
+
+    fix_dir    = os.path.join(result["output_dir"], "fixed_functions", fn_key, "iteration_0")
+    fixed_path = os.path.join(fix_dir, "fixed_function.py")
+    diag_path  = os.path.join(fix_dir, "diagnosis.md")
+    # Operate-and-catch instead of isfile-then-open: avoids TOCTOU and one stat call
+    try:
+        with open(fixed_path, encoding="utf-8") as fh:
+            fixed_code = fh.read()
+    except FileNotFoundError:
+        return
+    diagnosis = None
+    try:
+        with open(diag_path, encoding="utf-8") as fh:
+            diagnosis = fh.read()
+    except FileNotFoundError:
+        pass
+    db.add(ProposedFix(function_id=fn_record.id, fixed_code=fixed_code, diagnosis=diagnosis))
+
+
 # ── Background task ───────────────────────────────────────────────────────────
 
 def _execute_pipeline(run_id: int, body: RunRequest):
@@ -41,7 +82,7 @@ def _execute_pipeline(run_id: int, body: RunRequest):
     db = SessionLocal()
     try:
         run = db.get(Run, run_id)
-        run.status = "running"
+        run.status = RunStatus.RUNNING
         db.commit()
 
         result = run_pipeline(
@@ -58,54 +99,18 @@ def _execute_pipeline(run_id: int, body: RunRequest):
         run.output_dir = result["output_dir"]
 
         if result["status"] == "error":
-            run.status = "error"
+            run.status = RunStatus.ERROR
             run.error_message = result["error"]
         else:
-            run.status = "done"
-
-            # Persist function + test results
-            fn_record = Function(
-                run_id=run_id,
-                name=result["fn_name"],
-                file_path=result["fn_file"],
-            )
-            db.add(fn_record)
-            db.flush()
-
-            import os
-            test_dir = os.path.join(result["output_dir"], "generated_tests", f"{result['fn_name']}_0")
-            if os.path.isdir(test_dir):
-                for fname in sorted(os.listdir(test_dir)):
-                    if not (fname.startswith("test_") and fname.endswith(".py")):
-                        continue
-                    test_type = fname[len("test_"):-len(".py")]
-                    with open(os.path.join(test_dir, fname), encoding="utf-8") as fh:
-                        code = fh.read()
-                    key = (f"{result['fn_name']}_0", fname)
-                    outcome = result["test_outcomes"].get(str(key), {})
-                    db.add(GeneratedTest(
-                        function_id=fn_record.id,
-                        test_type=test_type,
-                        code=code,
-                        passed=len(outcome.get("passed", [])),
-                        failed=len(outcome.get("failed", [])),
-                    ))
-
-            # Persist proposed fix if one was written
-            fix_dir = os.path.join(result["output_dir"], "fixed_functions", f"{result['fn_name']}_0", "iteration_0")
-            fixed_path = os.path.join(fix_dir, "fixed_function.py")
-            diag_path  = os.path.join(fix_dir, "diagnosis.md")
-            if os.path.isfile(fixed_path):
-                fixed_code = open(fixed_path, encoding="utf-8").read()
-                diagnosis  = open(diag_path,  encoding="utf-8").read() if os.path.isfile(diag_path) else None
-                db.add(ProposedFix(function_id=fn_record.id, fixed_code=fixed_code, diagnosis=diagnosis))
+            run.status = RunStatus.DONE
+            _persist_results(db, run_id, result)
 
         run.finished_at = datetime.utcnow()
         db.commit()
 
     except Exception as e:
         run = db.get(Run, run_id)
-        run.status = "error"
+        run.status = RunStatus.ERROR
         run.error_message = str(e)
         run.finished_at = datetime.utcnow()
         db.commit()
@@ -121,7 +126,7 @@ def create_run(body: RunRequest, background_tasks: BackgroundTasks, db: Session 
         repo_url=body.repo_url,
         function_name=body.function_name,
         config_json=json.dumps({"provider": body.provider, "preset": body.preset}),
-        status="pending",
+        status=RunStatus.PENDING,
     )
     db.add(run)
     db.commit()
