@@ -72,10 +72,21 @@ class BenchmarkRun(Base):
     provider: Mapped[str] = mapped_column(String, nullable=False)
     project: Mapped[str] = mapped_column(String, nullable=False)
     bug_id: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[str] = mapped_column(String, nullable=False)
+    instance_id: Mapped[str] = mapped_column(String, default="")
+    status: Mapped[str] = mapped_column(String, default="ok")
+    # Test counts on buggy code
+    tests_run: Mapped[int] = mapped_column(Integer, default=0)
     tests_passed: Mapped[int] = mapped_column(Integer, default=0)
     tests_failed: Mapped[int] = mapped_column(Integer, default=0)
-    fix_attempted: Mapped[bool] = mapped_column(Boolean, default=False)
-    fix_converged: Mapped[bool] = mapped_column(Boolean, default=False)
+    tests_errored: Mapped[int] = mapped_column(Integer, default=0)
+    # SWT-bench transitions
+    patch_applied: Mapped[bool] = mapped_column(Boolean, default=False)   # W
+    f2p: Mapped[int] = mapped_column(Integer, default=0)                  # F→P
+    f2f: Mapped[int] = mapped_column(Integer, default=0)                  # F→F
+    p2f: Mapped[int] = mapped_column(Integer, default=0)                  # P→F
+    p2p: Mapped[int | None] = mapped_column(Integer, nullable=True)       # P→P
+    # Summary
+    detected: Mapped[bool] = mapped_column(Boolean, default=False)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False)        # S
     elapsed_seconds: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

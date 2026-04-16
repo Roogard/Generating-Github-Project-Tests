@@ -40,44 +40,35 @@ def _persist_results(db: Session, run_id: int, result: dict) -> None:
     db.add(fn_record)
     db.flush()
 
-    fn_key = f"{result['fn_name']}_0"
-    test_dir = os.path.join(result["output_dir"], "generated_tests", fn_key)
-    if os.path.isdir(test_dir):
+    test_dir = result.get("test_dir", "")
+    if test_dir and os.path.isdir(test_dir):
         for fname in sorted(os.listdir(test_dir)):
             if not (fname.startswith("test_") and fname.endswith(".py")):
                 continue
             test_type = fname[len("test_"):-len(".py")]
-            with open(os.path.join(test_dir, fname), encoding="utf-8") as fh:
+            fpath = os.path.join(test_dir, fname)
+            with open(fpath, encoding="utf-8") as fh:
                 code = fh.read()
-            outcome = result["test_outcomes"].get(str((fn_key, fname)), {})
+            outcome = result.get("test_outcomes", {}).get(fpath, {})
             db.add(GeneratedTest(
                 function_id=fn_record.id, test_type=test_type, code=code,
                 passed=len(outcome.get("passed", [])),
                 failed=len(outcome.get("failed", [])),
             ))
 
-    fix_dir    = os.path.join(result["output_dir"], "fixed_functions", fn_key, "iteration_0")
-    fixed_path = os.path.join(fix_dir, "fixed_function.py")
-    diag_path  = os.path.join(fix_dir, "diagnosis.md")
-    # Operate-and-catch instead of isfile-then-open: avoids TOCTOU and one stat call
-    try:
-        with open(fixed_path, encoding="utf-8") as fh:
-            fixed_code = fh.read()
-    except FileNotFoundError:
-        return
-    diagnosis = None
-    try:
-        with open(diag_path, encoding="utf-8") as fh:
-            diagnosis = fh.read()
-    except FileNotFoundError:
-        pass
-    db.add(ProposedFix(function_id=fn_record.id, fixed_code=fixed_code, diagnosis=diagnosis))
+    fixed_code = result.get("fixed_code", "")
+    if fixed_code:
+        db.add(ProposedFix(
+            function_id=fn_record.id,
+            fixed_code=fixed_code,
+            diagnosis=result.get("diagnosis"),
+        ))
 
 
 # ── Background task ───────────────────────────────────────────────────────────
 
 def _execute_pipeline(run_id: int, body: RunRequest):
-    from src.pipeline import run_pipeline
+    from pipeline import run_pipeline
 
     db = SessionLocal()
     try:

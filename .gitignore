@@ -38,6 +38,11 @@ data/dataset.json
 *.tmp
 *.log
 
+# Runtime data
+*.db
+chroma_db/
+eval_output/
+
 # IDE
 .vscode/
 .idea/

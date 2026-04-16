@@ -1,8 +1,7 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from api.db import get_db
@@ -19,11 +18,22 @@ class BenchmarkRunIn(BaseModel):
     provider: str
     project: str
     bug_id: str
-    status: str           # detected | missed | error
+    instance_id: str = ""
+    status: str = "ok"       # ok | error | no_patch | no_targets
+    # Test counts on buggy code
+    tests_run: int = 0
     tests_passed: int = 0
     tests_failed: int = 0
-    fix_attempted: bool = False
-    fix_converged: bool = False
+    tests_errored: int = 0
+    # SWT-bench transitions
+    patch_applied: bool = False   # W — applicability
+    f2p: int = 0                  # F→P count
+    f2f: int = 0                  # F→F count (spurious)
+    p2f: int = 0                  # P→F count (regressions)
+    p2p: int | None = None        # P→P count
+    # Summary
+    detected: bool = False
+    resolved: bool = False        # S — primary SWT-bench metric
     elapsed_seconds: float = 0.0
 
 
@@ -39,11 +49,15 @@ class BenchmarkStats(BaseModel):
     benchmark_name: str
     model: str
     total: int
+    resolved: int
+    resolved_rate: float          # S — primary SWT-bench metric
     detected: int
     detection_rate: float
-    fix_attempted: int
-    fix_converged: int
-    convergence_rate: float
+    applicable: int
+    applicability_rate: float     # W
+    total_f2p: int
+    total_f2f: int
+    total_p2f: int
     avg_elapsed_seconds: float
 
 
@@ -83,20 +97,27 @@ def get_stats(
 
     stats = []
     for (bname, mname), group in sorted(groups.items()):
-        total = len(group)
-        detected = sum(1 for r in group if r.status == "detected")
-        fix_att  = sum(1 for r in group if r.fix_attempted)
-        fix_conv = sum(1 for r in group if r.fix_converged)
+        total      = len(group)
+        n_resolved = sum(1 for r in group if r.resolved)
+        n_detected = sum(1 for r in group if r.detected)
+        n_applic   = sum(1 for r in group if r.patch_applied)
+        tot_f2p    = sum(r.f2p for r in group)
+        tot_f2f    = sum(r.f2f for r in group)
+        tot_p2f    = sum(r.p2f for r in group)
         avg_elapsed = sum(r.elapsed_seconds for r in group) / total
         stats.append(BenchmarkStats(
             benchmark_name=bname,
             model=mname,
             total=total,
-            detected=detected,
-            detection_rate=round(detected / total, 4),
-            fix_attempted=fix_att,
-            fix_converged=fix_conv,
-            convergence_rate=round(fix_conv / fix_att, 4) if fix_att else 0.0,
+            resolved=n_resolved,
+            resolved_rate=round(n_resolved / total, 4),
+            detected=n_detected,
+            detection_rate=round(n_detected / total, 4),
+            applicable=n_applic,
+            applicability_rate=round(n_applic / total, 4),
+            total_f2p=tot_f2p,
+            total_f2f=tot_f2f,
+            total_p2f=tot_p2f,
             avg_elapsed_seconds=round(avg_elapsed, 2),
         ))
     return stats

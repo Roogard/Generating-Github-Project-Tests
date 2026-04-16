@@ -13,21 +13,19 @@ dependencies = [
     "tree-sitter>=0.23",
     "tree-sitter-python>=0.23",
     "python-dotenv>=1.0",
-    "omegaconf>=2.3",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "sqlalchemy>=2.0",
     "pytest-json-report>=1.5",
     "pytest-cov>=5.0",
-    "chromadb>=0.4",
 ]
 
 [project.scripts]
 ghtest-api = "api.app:start"
-ghtest = "run:main"
+ghtest = "main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src", "api"]
+packages = ["api"]
 
 [tool.uv]
 dev-dependencies = [

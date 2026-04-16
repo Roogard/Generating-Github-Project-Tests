@@ -20,7 +20,3 @@ class TestType(StrEnum):
     BLACKBOX = "blackbox"
 
 
-class BenchmarkStatus(StrEnum):
-    DETECTED = "detected"
-    MISSED   = "missed"
-    ERROR    = "error"

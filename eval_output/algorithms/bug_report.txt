@@ -1,1 +1,0 @@
-No potential bugs detected. All generated tests passed.
