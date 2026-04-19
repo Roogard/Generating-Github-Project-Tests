@@ -3,6 +3,8 @@
 Embeds function source code so that semantically similar past examples
 can be retrieved as few-shot context before LLM test generation calls.
 """
+from __future__ import annotations
+
 import hashlib
 
 import chromadb

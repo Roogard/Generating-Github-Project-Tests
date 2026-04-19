@@ -318,7 +318,7 @@ def _run_repair_loop(outcomes: dict, fns: list, cfg: dict, repo_dir: str, timeou
 _COVERAGE_THRESHOLD = 80.0
 
 
-def _coverage_pass(test_dir: str, functions: list, cfg: dict, repo_dir: str, timeout: int) -> None:
+def _coverage_pass(test_dir: str, functions: list, cfg: dict, repo_dir: str, timeout: int, use_rag: bool = True) -> None:
     """Measure coverage after the initial run and generate a supplemental test file for under-covered functions.
 
     Writes test_whitebox_cov.py / test_blackbox_cov.py (separate files so the originals are untouched).
@@ -358,7 +358,7 @@ def _coverage_pass(test_dir: str, functions: list, cfg: dict, repo_dir: str, tim
     if not fns_needing_coverage:
         return
 
-    supp_tests = generate_tests(fns_needing_coverage, cfg)
+    supp_tests = generate_tests(fns_needing_coverage, cfg, use_rag=use_rag)
     target_fn_names = {fn["name"] for fn in fns_needing_coverage}
     for kind, code in supp_tests.items():
         if not code or not code.strip():
@@ -396,6 +396,7 @@ def run_pipeline(
     install_deps: bool = True,
     api_key: str | None = None,
     fix_pass: bool = False,
+    use_rag: bool = True,
 ) -> dict:
     """Clone repo, generate tests for one function, run them.
 
@@ -434,7 +435,7 @@ def run_pipeline(
         print(f"  LLM: {provider}/{cfg['model']}  preset={preset}  spec: {len(fn['spec'])} chars")
 
         test_dir = os.path.join(run_dir, "tests")
-        tests = generate_tests([fn], cfg)
+        tests = generate_tests([fn], cfg, use_rag=use_rag)
         _write_tests(test_dir, tests, tmp, target_fn_names={fn["name"]})
         outcomes, _ = _run_all_tests(test_dir, tmp, timeout)
         outcomes, _, repair_log = _run_repair_loop(outcomes, [fn], cfg, tmp, timeout)
@@ -520,6 +521,7 @@ def run_project_for_api(
     fix_pass: bool = False,
     limit: int | None = None,
     progress_callback=None,
+    use_rag: bool = True,
 ) -> dict:
     """Clone repo once, generate+run tests for every function, return aggregated results.
 
@@ -580,7 +582,7 @@ def run_project_for_api(
             test_dir = os.path.join(fn_run_dir, "tests")
 
             try:
-                tests = generate_tests([fn], cfg)
+                tests = generate_tests([fn], cfg, use_rag=use_rag)
                 _write_tests(test_dir, tests, tmp, target_fn_names={fn["name"]})
                 outcomes, _ = _run_all_tests(test_dir, tmp, timeout)
                 outcomes, _, repair_log = _run_repair_loop(outcomes, [fn], cfg, tmp, timeout)
@@ -672,6 +674,7 @@ def run_for_repo(
     fix_pass: bool = False,
     per_test_timeout: int | None = None,
     coverage_pass: bool = True,
+    use_rag: bool = True,
 ) -> list:
     """Generate and run tests for all functions from a pre-cloned repo.
 
@@ -683,7 +686,7 @@ def run_for_repo(
     """
     os.makedirs(output_dir, exist_ok=True)
     test_dir = os.path.join(output_dir, "tests")
-    tests = generate_tests(functions, cfg)
+    tests = generate_tests(functions, cfg, use_rag=use_rag)
     target_fn_names = {fn["name"] for fn in functions}
     _write_tests(test_dir, tests, repo_dir, target_fn_names=target_fn_names)
     outcomes, all_passed = _run_all_tests(test_dir, repo_dir, timeout, per_test_timeout)
@@ -705,7 +708,7 @@ def run_for_repo(
                     all_failures = _parse_failures(outcomes)
 
     if coverage_pass:
-        _coverage_pass(test_dir, functions, cfg, repo_dir, timeout)
+        _coverage_pass(test_dir, functions, cfg, repo_dir, timeout, use_rag=use_rag)
         # Re-run to pick up any coverage-supplemental test files written above
         outcomes, all_passed = _run_all_tests(test_dir, repo_dir, timeout, per_test_timeout)
     failures = _parse_failures(outcomes)

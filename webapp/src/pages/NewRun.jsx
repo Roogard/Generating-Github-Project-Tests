@@ -19,6 +19,7 @@ export default function NewRun() {
     save_to_db: false,
     save_to_rag: false,
     rag_success_only: true,
+    use_rag: true,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -42,6 +43,7 @@ export default function NewRun() {
         save_to_db: form.save_to_db,
         save_to_rag: form.save_to_rag,
         rag_success_only: form.rag_success_only,
+        use_rag: form.use_rag,
         function_limit: form.function_limit ? parseInt(form.function_limit) : null,
       }
       const res = await createRun(body)
@@ -138,6 +140,12 @@ export default function NewRun() {
           <div className="toggle-row">
             <input type="checkbox" id="save_to_db" checked={form.save_to_db} onChange={e => set('save_to_db', e.target.checked)} />
             <label htmlFor="save_to_db" style={{ marginBottom: 0 }}>Save full results to SQLite database</label>
+          </div>
+          <div className="toggle-row">
+            <input type="checkbox" id="use_rag" checked={form.use_rag} onChange={e => set('use_rag', e.target.checked)} />
+            <label htmlFor="use_rag" style={{ marginBottom: 0 }}>
+              Use ChromaDB memory during generation (RAG retrieval)
+            </label>
           </div>
           <div className="toggle-row">
             <input type="checkbox" id="save_to_rag" checked={form.save_to_rag} onChange={e => set('save_to_rag', e.target.checked)} />

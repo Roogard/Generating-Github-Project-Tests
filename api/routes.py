@@ -29,6 +29,7 @@ class RunRequest(BaseModel):
     save_to_db: bool = True       # persist full run details to SQLite
     save_to_rag: bool = True      # ingest generated tests into ChromaDB for future RAG
     rag_success_only: bool = True # only ingest into RAG if at least one test passed
+    use_rag: bool = True          # retrieve ChromaDB examples during test generation
 
     def effective_model(self) -> str | None:
         if not self.model or not self.model.strip() or self.model.strip().lower() == "string":
@@ -205,6 +206,7 @@ def _execute_pipeline(run_id: int, body: RunRequest):
                 install_deps=body.install_deps,
                 api_key=body.effective_api_key(),
                 fix_pass=body.fix_pass,
+                use_rag=body.use_rag,
             )
             run.output_dir = result["output_dir"]
             if result["status"] == "error":
@@ -238,6 +240,7 @@ def _execute_pipeline(run_id: int, body: RunRequest):
                 fix_pass=body.fix_pass,
                 limit=body.function_limit,
                 progress_callback=progress_cb,
+                use_rag=body.use_rag,
             )
             run.output_dir = result["output_dir"]
             if result["status"] == "error":
@@ -283,6 +286,8 @@ def create_run(body: RunRequest, background_tasks: BackgroundTasks, db: Session 
             "preset": body.preset,
             "fix_pass": body.fix_pass,
             "function_limit": body.function_limit,
+            "use_rag": body.use_rag,
+            "save_to_rag": body.save_to_rag,
         }),
         status=RunStatus.PENDING,
         progress_current=0,
