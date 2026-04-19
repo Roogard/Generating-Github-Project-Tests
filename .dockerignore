@@ -1,0 +1,12 @@
+**/__pycache__
+**/*.pyc
+.venv
+.env
+ghtest.db
+chroma_db/
+eval_output/
+output/
+webapp/node_modules
+webapp/dist
+.git
+myproj/

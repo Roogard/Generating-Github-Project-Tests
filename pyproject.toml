@@ -18,6 +18,7 @@ dependencies = [
     "sqlalchemy>=2.0",
     "pytest-json-report>=1.5",
     "pytest-cov>=5.0",
+    "chromadb>=0.4",
 ]
 
 [project.scripts]
@@ -25,7 +26,7 @@ ghtest-api = "api.app:start"
 ghtest = "main:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["api"]
+packages = ["api", "src"]
 
 [tool.uv]
 dev-dependencies = [

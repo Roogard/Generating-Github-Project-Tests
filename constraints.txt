@@ -3,5 +3,6 @@ py>=1.11.0
 pluggy>=1.5.0
 pytest>=7.0.0
 pytest-json-report>=1.5.0
+pytest-timeout>=0.5.0
 urllib3>=2.0.0
 requests>=2.28.0

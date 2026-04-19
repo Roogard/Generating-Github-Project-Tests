@@ -6,8 +6,12 @@ import sys
 import tempfile
 
 
-def run_tests(test_file, repo_dir, timeout=60):
-    """Run pytest on test_file and return structured results."""
+def run_tests(test_file, repo_dir, timeout=60, per_test_timeout=None):
+    """Run pytest on test_file and return structured results.
+
+    per_test_timeout: if set, passes --timeout=N to pytest-timeout to kill
+    individual hanging tests after N seconds (requires pytest-timeout installed).
+    """
     report_file = tempfile.mktemp(suffix=".json")
     env = os.environ.copy()
     env["PYTHONPATH"] = repo_dir + os.pathsep + env.get("PYTHONPATH", "")
@@ -15,6 +19,7 @@ def run_tests(test_file, repo_dir, timeout=60):
         result = subprocess.run(
             [sys.executable, "-m", "pytest", test_file,
              "--json-report", f"--json-report-file={report_file}",
+             *([f"--timeout={per_test_timeout}"] if per_test_timeout else []),
              "-q", "--tb=short", "--no-header"],
             capture_output=True, text=True, env=env, timeout=timeout,
         )

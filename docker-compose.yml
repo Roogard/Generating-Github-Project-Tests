@@ -1,0 +1,15 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ghtest_data:/data
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=sqlite:////data/ghtest.db
+      - CHROMA_PATH=/data/chroma_db
+
+volumes:
+  ghtest_data:

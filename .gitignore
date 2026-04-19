@@ -42,6 +42,11 @@ data/dataset.json
 *.db
 chroma_db/
 eval_output/
+output/
+
+# Frontend build artifacts
+webapp/node_modules/
+webapp/dist/
 
 # IDE
 .vscode/
