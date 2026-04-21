@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getRun, getRunStatus, downloadRun, promoteRunToMemory } from '../api.js'
-import { useAdmin, isBenchmarkMode } from '../admin.js'
+import { getRun, getRunStatus, downloadRun } from '../api.js'
+import { isBenchmarkMode } from '../utils.js'
 
 function Badge({ status }) {
   return <span className={`badge badge-${status}`}>{status}</span>
@@ -20,55 +20,59 @@ function ProgressSection({ current, total, status }) {
   )
 }
 
-function BenchmarkPanel({ run }) {
-  if (!isBenchmarkMode(run.mode)) return null
-  const dot = (label, value, tone) => (
-    <div className="stat-card" style={{ minWidth: 90 }}>
-      <div className="stat-label">{label}</div>
-      <div className="stat-value" style={{ fontSize: 18, color: tone }}>{value}</div>
-    </div>
-  )
+function OracleMatrix({ run }) {
+  const cells = [
+    { code: 'F→P', value: run.f2p, hint: 'fail→pass', cls: 'good' },
+    { code: 'F→F', value: run.f2f, hint: 'fail→fail', cls: 'bad' },
+    { code: 'P→F', value: run.p2f, hint: 'pass→fail', cls: 'bad' },
+    { code: 'P→P', value: run.p2p ?? 0, hint: 'pass→pass', cls: '' },
+  ]
   return (
-    <div className="card" style={{ marginBottom: 20 }}>
-      <h3 style={{ fontSize: 14, marginBottom: 10 }}>
-        SWT-bench Oracle  ·  <span style={{ color: '#64748b' }}>{run.mode}:{run.benchmark_id}</span>
-      </h3>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {dot('F→P', run.f2p, run.f2p > 0 ? '#6ee7b7' : '#94a3b8')}
-        {dot('F→F', run.f2f, run.f2f > 0 ? '#fca5a5' : '#94a3b8')}
-        {dot('P→F', run.p2f, run.p2f > 0 ? '#fca5a5' : '#94a3b8')}
-        {dot('P→P', run.p2p ?? '—', '#94a3b8')}
-        {dot('Resolved', run.resolved ? 'YES' : 'no', run.resolved ? '#6ee7b7' : '#94a3b8')}
+    <div className="card" style={{ padding: 0, marginBottom: 20 }}>
+      <div className="card-header">
+        <h3>SWT-bench Oracle · <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>{run.mode}:{run.benchmark_id}</span></h3>
+        {run.resolved
+          ? <span className="chip chip-pass">S Resolved</span>
+          : <span style={{ fontSize: 12, color: 'var(--text-3)' }}>Not resolved</span>}
       </div>
-    </div>
-  )
-}
-
-function AdminCurationBlock({ run, onPromote, promoting, promoteMsg }) {
-  return (
-    <div
-      className="card"
-      style={{ marginBottom: 20, borderColor: '#22c55e', background: '#0f1f38' }}
-    >
-      <h3 style={{ fontSize: 14, marginBottom: 10, color: '#bbf7d0' }}>
-        Admin curation
-      </h3>
-      {promoteMsg && <div className="alert alert-info" style={{ marginBottom: 10 }}>{promoteMsg}</div>}
-
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        {run.promoted_to_memory_at ? (
-          <span className="badge badge-done" title={run.promoted_to_memory_at}>
-            ✓ Promoted to memory
-          </span>
-        ) : (
-          <button className="btn-ghost btn-sm" onClick={onPromote} disabled={promoting}>
-            {promoting ? 'Promoting…' : '📥 Promote to vector DB'}
-          </button>
-        )}
-        <span style={{ fontSize: 12, color: '#64748b' }}>
-          Promote copies each qualifying function's whitebox + blackbox tests into
-          ChromaDB for RAG retrieval on future runs.
-        </span>
+      <div className="oracle-grid">
+        <div className="oracle-corner">
+          buggy<span className="arrow">→</span>golden
+        </div>
+        <div className="oracle-col-head">Pass</div>
+        <div className="oracle-col-head">Fail</div>
+        <div className="oracle-row-head">Fail</div>
+        <div className={`oracle-cell ${cells[0].cls}`}>
+          <div className="oracle-cell-code">{cells[0].code}</div>
+          <div className="oracle-cell-value" style={{ color: cells[0].value > 0 ? 'var(--green-fg)' : 'var(--text)' }}>{cells[0].value}</div>
+          <div className="oracle-cell-hint">{cells[0].hint}</div>
+        </div>
+        <div className={`oracle-cell ${cells[1].cls} no-right-border`}>
+          <div className="oracle-cell-code">{cells[1].code}</div>
+          <div className="oracle-cell-value" style={{ color: cells[1].value > 0 ? 'var(--red-fg)' : 'var(--text)' }}>{cells[1].value}</div>
+          <div className="oracle-cell-hint">{cells[1].hint}</div>
+        </div>
+        <div className="oracle-row-head">Pass</div>
+        <div className={`oracle-cell ${cells[2].cls} last-row`}>
+          <div className="oracle-cell-code">{cells[2].code}</div>
+          <div className="oracle-cell-value" style={{ color: cells[2].value > 0 ? 'var(--red-fg)' : 'var(--text)' }}>{cells[2].value}</div>
+          <div className="oracle-cell-hint">{cells[2].hint}</div>
+        </div>
+        <div className={`oracle-cell last-row no-right-border`}>
+          <div className="oracle-cell-code">{cells[3].code}</div>
+          <div className="oracle-cell-value">{cells[3].value}</div>
+          <div className="oracle-cell-hint">{cells[3].hint}</div>
+        </div>
+      </div>
+      <div className="matrix-legend">
+        <div className="matrix-legend-item">
+          <div className="dot" style={{ background: 'var(--green-fg)' }} />
+          F→P: tests that detect the bug (true positives)
+        </div>
+        <div className="matrix-legend-item">
+          <div className="dot" style={{ background: 'var(--red-fg)' }} />
+          F→F / P→F: spurious failures or regressions
+        </div>
       </div>
     </div>
   )
@@ -82,13 +86,13 @@ function FunctionCard({ fn }) {
     <div className="card" style={{ padding: 0, marginBottom: 12 }}>
       <div className="accordion-header" onClick={() => setOpen(o => !o)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{fn.name}</span>
-          <span style={{ fontSize: 12, color: '#64748b' }}>{fn.file_path}</span>
+          <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{fn.name}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{fn.file_path}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {fn.tests_passed > 0 && <span className="chip chip-pass">✓ {fn.tests_passed}</span>}
           {fn.tests_failed > 0 && <span className="chip chip-fail">✗ {fn.tests_failed}</span>}
-          <span style={{ color: '#64748b', fontSize: 18 }}>{open ? '▲' : '▼'}</span>
+          <span style={{ color: 'var(--text-3)', fontSize: 18 }}>{open ? '▲' : '▼'}</span>
         </div>
       </div>
 
@@ -103,11 +107,11 @@ function FunctionCard({ fn }) {
             </div>
             <div className="stat-card" style={{ minWidth: 100 }}>
               <div className="stat-label">Passed</div>
-              <div className="stat-value" style={{ fontSize: 18, color: '#6ee7b7' }}>{fn.tests_passed}</div>
+              <div className="stat-value" style={{ fontSize: 18, color: 'var(--green-fg)' }}>{fn.tests_passed}</div>
             </div>
             <div className="stat-card" style={{ minWidth: 100 }}>
               <div className="stat-label">Failed</div>
-              <div className="stat-value" style={{ fontSize: 18, color: fn.tests_failed > 0 ? '#fca5a5' : '#6ee7b7' }}>{fn.tests_failed}</div>
+              <div className="stat-value" style={{ fontSize: 18, color: fn.tests_failed > 0 ? 'var(--red-fg)' : 'var(--green-fg)' }}>{fn.tests_failed}</div>
             </div>
           </div>
 
@@ -130,30 +134,8 @@ export default function RunDetail() {
   const nav = useNavigate()
   const [run, setRun] = useState(null)
   const [error, setError] = useState('')
-  const [promoting, setPromoting] = useState(false)
-  const [promoteMsg, setPromoteMsg] = useState('')
-  const admin = useAdmin()
 
   const loadFull = () => getRun(id).then(setRun).catch(e => setError(e.message))
-
-  const onPromote = async () => {
-    setPromoting(true)
-    setPromoteMsg('')
-    try {
-      const r = await promoteRunToMemory(run.id)
-      const skipSummary = Object.entries(r.skipped || {})
-        .map(([k, v]) => `${k}: ${v}`).join(', ')
-      setPromoteMsg(
-        `Ingested ${r.ingested} example${r.ingested === 1 ? '' : 's'}` +
-        (skipSummary ? ` (skipped — ${skipSummary})` : '')
-      )
-      loadFull()
-    } catch (e) {
-      setPromoteMsg(e.message)
-    } finally {
-      setPromoting(false)
-    }
-  }
 
   useEffect(() => {
     loadFull()
@@ -179,17 +161,20 @@ export default function RunDetail() {
     <div className="page"><div className="alert alert-error">{error}</div></div>
   )
   if (!run) return (
-    <div className="page"><p style={{ color: '#64748b' }}>Loading...</p></div>
+    <div className="page"><p style={{ color: 'var(--text-3)' }}>Loading...</p></div>
   )
 
-  const showAdminBlock = admin && run.status === 'done'
+  const isBench = isBenchmarkMode(run.mode)
 
   return (
     <div className="page">
       <div className="page-header">
         <div>
-          <button className="btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => nav('/')}>← Runs</button>
-          <h1 className="page-title" style={{ fontSize: 18 }}>{run.repo_url}</h1>
+          <button className="btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => nav(-1)}>← Back</button>
+          <h1 className="page-title" style={{ fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {run.repo_url}
+            {isBench && <span className="chip chip-bench">BENCH</span>}
+          </h1>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {run.status === 'done' && run.output_dir && (
@@ -211,11 +196,11 @@ export default function RunDetail() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Tests Passed</div>
-            <div className="stat-value" style={{ color: '#6ee7b7' }}>{run.tests_passed}</div>
+            <div className="stat-value" style={{ color: 'var(--green-fg)' }}>{run.tests_passed}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Tests Failed</div>
-            <div className="stat-value" style={{ color: run.tests_failed > 0 ? '#fca5a5' : '#6ee7b7' }}>{run.tests_failed}</div>
+            <div className="stat-value" style={{ color: run.tests_failed > 0 ? 'var(--red-fg)' : 'var(--green-fg)' }}>{run.tests_failed}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Avg Coverage</div>
@@ -224,26 +209,17 @@ export default function RunDetail() {
         </div>
       )}
 
-      <BenchmarkPanel run={run} />
-
-      {showAdminBlock && (
-        <AdminCurationBlock
-          run={run}
-          onPromote={onPromote}
-          promoting={promoting}
-          promoteMsg={promoteMsg}
-        />
-      )}
+      {isBench && <OracleMatrix run={run} />}
 
       {run.functions.length > 0 && (
         <>
-          <h2 style={{ fontSize: 16, marginBottom: 12, color: '#94a3b8' }}>Functions</h2>
+          <h2 style={{ fontSize: 16, marginBottom: 12, color: 'var(--text-2)' }}>Functions</h2>
           {run.functions.map(fn => <FunctionCard key={fn.id} fn={fn} />)}
         </>
       )}
 
       {run.status === 'running' && run.functions.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '48px', color: '#64748b' }}>
+        <div style={{ textAlign: 'center', padding: '48px', color: 'var(--text-3)' }}>
           Pipeline is running. Results will appear here as functions complete.
         </div>
       )}

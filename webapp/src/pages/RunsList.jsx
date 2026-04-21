@@ -1,7 +1,26 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getRuns, deleteRun } from '../api.js'
-import { isBenchmarkMode } from '../admin.js'
+import { getRuns, deleteRun, createRun } from '../api.js'
+import { isBenchmarkMode } from '../utils.js'
+
+const SESSION_KEY = 'ggpt_session_run_ids'
+
+function getSessionIds() {
+  try { return new Set(JSON.parse(sessionStorage.getItem(SESSION_KEY) || '[]')) } catch { return new Set() }
+}
+function addSessionId(id) {
+  const ids = getSessionIds()
+  ids.add(id)
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify([...ids]))
+}
+function removeSessionId(id) {
+  const ids = getSessionIds()
+  ids.delete(id)
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify([...ids]))
+}
+
+const PROVIDERS = ['deepseek', 'openai', 'anthropic', 'ollama']
+const PRESETS = ['fast', 'default', 'thorough']
 
 function statusBadge(status) {
   return <span className={`badge badge-${status}`}>{status}</span>
@@ -18,21 +37,24 @@ function timeAgo(ts) {
 }
 
 export default function RunsList() {
-  const [runs, setRuns] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const nav = useNavigate()
 
-  const load = () => {
+  // ── runs list ──
+  const [runs, setRuns] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [listError, setListError] = useState('')
+
+  const loadRuns = () => {
+    const ids = getSessionIds()
     getRuns()
-      .then(setRuns)
-      .catch(e => setError(e.message))
+      .then(all => setRuns(all.filter(r => ids.has(r.id))))
+      .catch(e => setListError(e.message))
       .finally(() => setLoading(false))
   }
 
   useEffect(() => {
-    load()
-    const id = setInterval(load, 5000)
+    loadRuns()
+    const id = setInterval(loadRuns, 5000)
     return () => clearInterval(id)
   }, [])
 
@@ -40,29 +62,70 @@ export default function RunsList() {
     e.stopPropagation()
     if (!confirm('Delete this run and all its data?')) return
     await deleteRun(id)
+    removeSessionId(id)
     setRuns(r => r.filter(x => x.id !== id))
+  }
+
+  // ── new run form ──
+  const [form, setForm] = useState({
+    repo_url: '',
+    api_key: '',
+    provider: 'deepseek',
+    model: '',
+    preset: 'default',
+    function_name: '',
+    function_limit: '',
+    install_deps: true,
+    use_rag: true,
+  })
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const submit = async e => {
+    e.preventDefault()
+    if (!form.repo_url.trim()) return setFormError('Repository URL is required')
+    setFormError('')
+    setSubmitting(true)
+    try {
+      const res = await createRun({
+        repo_url: form.repo_url.trim(),
+        api_key: form.api_key.trim(),
+        provider: form.provider,
+        model: form.model.trim() || null,
+        preset: form.preset,
+        function_name: form.function_name.trim(),
+        install_deps: form.install_deps,
+        use_rag: form.use_rag,
+        function_limit: form.function_limit ? parseInt(form.function_limit) : null,
+      })
+      addSessionId(res.id)
+      nav(`/runs/${res.id}`)
+    } catch (e) {
+      setFormError(e.message)
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
     <div className="page">
+      {/* ── Runs list ── */}
       <div className="page-header">
-        <h1 className="page-title">Test Generation Runs</h1>
-        <button className="btn-primary" onClick={() => nav('/runs/new')}>+ New Run</button>
+        <h1 className="page-title">Runs</h1>
       </div>
 
-      {error && <div className="alert alert-error">{error}</div>}
-      {loading && <p style={{ color: '#64748b' }}>Loading...</p>}
+      {listError && <div className="alert alert-error">{listError}</div>}
+      {loading && <p style={{ color: 'var(--text-3)' }}>Loading...</p>}
 
       {!loading && runs.length === 0 && (
-        <div className="card" style={{ textAlign: 'center', padding: '48px', color: '#64748b' }}>
-          <p style={{ marginBottom: 16 }}>No runs yet.</p>
-          <button className="btn-primary" onClick={() => nav('/runs/new')}>Start your first run</button>
-        </div>
+        <p style={{ color: 'var(--text-3)', marginBottom: 32 }}>No runs yet — start one below.</p>
       )}
 
       {runs.length > 0 && (
-        <div className="card" style={{ padding: 0 }}>
-          <table>
+        <div className="card" style={{ padding: 0, marginBottom: 40, overflowX: 'auto' }}>
+          <table style={{ minWidth: 1040 }}>
             <thead>
               <tr>
                 <th>ID</th>
@@ -80,24 +143,13 @@ export default function RunsList() {
             <tbody>
               {runs.map(r => (
                 <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/runs/${r.id}`)}>
-                  <td style={{ color: '#64748b', width: 50 }}>#{r.id}</td>
+                  <td style={{ color: 'var(--text-3)', width: 50 }}>#{r.id}</td>
                   <td style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {r.repo_url}
                   </td>
-                  <td style={{ color: '#94a3b8', fontSize: 12 }}>
+                  <td style={{ color: 'var(--text-2)', fontSize: 12 }}>
                     {isBenchmarkMode(r.mode) && (
-                      <span
-                        className="chip"
-                        style={{
-                          marginRight: 6,
-                          background: '#1e293b',
-                          color: '#fbbf24',
-                          borderColor: '#b45309',
-                          fontSize: 10,
-                        }}
-                      >
-                        BENCH
-                      </span>
+                      <span className="chip chip-bench" style={{ marginRight: 6 }}>BENCH</span>
                     )}
                     {r.mode}{r.benchmark_id ? `:${r.benchmark_id}` : ''}
                   </td>
@@ -108,23 +160,23 @@ export default function RunsList() {
                         <div className="progress-bar-wrap">
                           <div className="progress-bar-fill" style={{ width: `${(r.progress_current / r.progress_total) * 100}%` }} />
                         </div>
-                        <span style={{ fontSize: 11, color: '#64748b' }}>{r.progress_current}/{r.progress_total}</span>
+                        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{r.progress_current}/{r.progress_total}</span>
                       </div>
                     ) : '—'}
                   </td>
                   <td>{r.function_count ?? '—'}</td>
                   <td style={{ fontSize: 12 }}>
                     {(r.tests_passed + r.tests_failed) > 0
-                      ? <><span style={{ color: '#6ee7b7' }}>{r.tests_passed}</span> / <span style={{ color: r.tests_failed > 0 ? '#fca5a5' : '#94a3b8' }}>{r.tests_failed}</span></>
-                      : <span style={{ color: '#475569' }}>—</span>}
+                      ? <><span style={{ color: 'var(--green-fg)' }}>{r.tests_passed}</span> / <span style={{ color: r.tests_failed > 0 ? 'var(--red-fg)' : 'var(--text-2)' }}>{r.tests_failed}</span></>
+                      : <span style={{ color: 'var(--text-3)' }}>—</span>}
                   </td>
                   <td>
                     {r.resolved
                       ? <span className="chip chip-pass">S</span>
-                      : <span style={{ color: '#475569', fontSize: 12 }}>—</span>}
-                    {r.f2p > 0 && <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>F→P {r.f2p}</span>}
+                      : <span style={{ color: 'var(--text-3)', fontSize: 12 }}>—</span>}
+                    {r.f2p > 0 && <span style={{ fontSize: 11, color: 'var(--text-3)', marginLeft: 6 }}>F→P {r.f2p}</span>}
                   </td>
-                  <td style={{ color: '#64748b', fontSize: 12 }}>{timeAgo(r.created_at)}</td>
+                  <td style={{ color: 'var(--text-3)', fontSize: 12 }}>{timeAgo(r.created_at)}</td>
                   <td onClick={e => e.stopPropagation()}>
                     <button className="btn-danger btn-sm" onClick={e => handleDelete(e, r.id)}>Delete</button>
                   </td>
@@ -134,6 +186,100 @@ export default function RunsList() {
           </table>
         </div>
       )}
+
+      {/* ── New run form ── */}
+      <h2 style={{ fontSize: 16, marginBottom: 20, color: 'var(--text-2)' }}>New Run</h2>
+
+      {formError && <div className="alert alert-error" style={{ marginBottom: 16 }}>{formError}</div>}
+
+      <form onSubmit={submit}>
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginBottom: 16, fontSize: 15 }}>Repository</h3>
+          <div className="form-group">
+            <label>GitHub Repository URL *</label>
+            <input
+              type="url"
+              value={form.repo_url}
+              onChange={e => set('repo_url', e.target.value)}
+              required
+            />
+          </div>
+          <div className="form-group">
+            <label>API Key (passed to LLM provider)</label>
+            <input
+              type="password"
+              value={form.api_key}
+              onChange={e => set('api_key', e.target.value)}
+            />
+          </div>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Target Function (leave blank for all)</label>
+              <input
+                type="text"
+                value={form.function_name}
+                onChange={e => set('function_name', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label>Function Limit (whole-project mode)</label>
+              <input
+                type="number"
+                min="1"
+                value={form.function_limit}
+                onChange={e => set('function_limit', e.target.value)}
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginBottom: 16, fontSize: 15 }}>LLM Settings</h3>
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Provider</label>
+              <select value={form.provider} onChange={e => set('provider', e.target.value)}>
+                {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+            <div className="form-group">
+              <label>Preset</label>
+              <select value={form.preset} onChange={e => set('preset', e.target.value)}>
+                {PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="form-group">
+            <label>Model Override (optional)</label>
+            <input
+              type="text"
+              value={form.model}
+              onChange={e => set('model', e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginBottom: 16, fontSize: 15 }}>Options</h3>
+          <div className="toggle-row">
+            <input type="checkbox" id="install_deps" checked={form.install_deps} onChange={e => set('install_deps', e.target.checked)} />
+            <div>
+              <div className="toggle-label">Install repo dependencies</div>
+            </div>
+          </div>
+          <div className="toggle-row" style={{ marginTop: 10 }}>
+            <input type="checkbox" id="use_rag" checked={form.use_rag} onChange={e => set('use_rag', e.target.checked)} />
+            <div>
+              <div className="toggle-label">Use RAG memory</div>
+              <div className="toggle-hint">Retrieve similar examples from ChromaDB during generation</div>
+            </div>
+          </div>
+        </div>
+
+        <button type="submit" className="btn-primary" disabled={submitting} style={{ width: '100%', padding: '12px' }}>
+          {submitting ? 'Starting...' : 'Start Test Generation'}
+        </button>
+      </form>
     </div>
   )
 }

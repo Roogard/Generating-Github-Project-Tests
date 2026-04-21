@@ -5,7 +5,7 @@ import { createBenchmark } from '../api.js'
 const PROVIDERS = ['deepseek', 'openai', 'anthropic', 'ollama']
 const PRESETS = ['fast', 'default', 'thorough']
 
-export default function BenchmarkRun() {
+export default function Benchmark() {
   const nav = useNavigate()
   const [form, setForm] = useState({
     provider: 'deepseek',
@@ -54,29 +54,41 @@ export default function BenchmarkRun() {
   return (
     <div className="page" style={{ maxWidth: 680 }}>
       <div className="page-header">
-        <h1 className="page-title">QuixBugs Benchmark</h1>
+        <div>
+          <h1 className="page-title">QuixBugs Benchmark</h1>
+          <p className="page-sub">Runs the QuixBugs oracle batch — each program becomes its own Run with SWT-bench transitions recorded.</p>
+        </div>
       </div>
 
-      <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
-        Runs the QuixBugs oracle batch. Each program becomes its own Run, with
-        SWT-bench transitions (F→P / F→F / P→F) recorded to the DB and surfaced
-        on the Analytics page.
-      </p>
-
       {error && <div className="alert alert-error">{error}</div>}
-      {message && <div className="alert alert-info" style={{ marginBottom: 16 }}>{message}</div>}
+      {message && <div className="alert alert-info">{message}</div>}
 
       <form onSubmit={submit}>
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 16, fontSize: 15 }}>QuixBugs</h3>
-          <div className="form-group">
-            <label>Phase</label>
-            <select value={form.phase} onChange={e => set('phase', e.target.value)}>
-              <option value="measure">Measure — evaluate on measure split</option>
-              <option value="populate">Populate — ingest golden examples into ChromaDB</option>
-            </select>
+          <div className="section-label" style={{ marginBottom: 14 }}>Phase</div>
+          <div className="grid-2" style={{ gap: 12 }}>
+            {[
+              { value: 'measure', title: 'Measure', desc: 'Evaluate on the measure split' },
+              { value: 'populate', title: 'Populate', desc: 'Ingest golden examples into ChromaDB' },
+            ].map(p => (
+              <div
+                key={p.value}
+                onClick={() => set('phase', p.value)}
+                style={{
+                  border: `1px solid ${form.phase === p.value ? 'var(--blue)' : 'var(--border)'}`,
+                  background: form.phase === p.value ? 'rgba(59,130,246,0.06)' : 'var(--surface)',
+                  borderRadius: 8, padding: '14px 16px', cursor: 'pointer',
+                  transition: 'border-color 0.12s, background 0.12s',
+                }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, color: form.phase === p.value ? 'var(--blue)' : 'var(--text)' }}>
+                  {p.title}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{p.desc}</div>
+              </div>
+            ))}
           </div>
-          <div className="grid-2">
+          <div className="grid-2" style={{ marginTop: 16 }}>
             <div className="form-group">
               <label>Populate count</label>
               <input
@@ -97,7 +109,7 @@ export default function BenchmarkRun() {
         </div>
 
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 16, fontSize: 15 }}>LLM Settings</h3>
+          <div className="section-label" style={{ marginBottom: 14 }}>LLM Settings</div>
           <div className="grid-2">
             <div className="form-group">
               <label>Provider</label>
@@ -116,16 +128,14 @@ export default function BenchmarkRun() {
             <label>Model Override (optional)</label>
             <input
               type="text"
-              placeholder="e.g. deepseek-chat"
               value={form.model}
               onChange={e => set('model', e.target.value)}
             />
           </div>
           <div className="form-group">
-            <label>API Key (passed to LLM provider)</label>
+            <label>API Key</label>
             <input
               type="password"
-              placeholder="sk-... or leave blank to use server .env"
               value={form.api_key}
               onChange={e => set('api_key', e.target.value)}
             />
@@ -133,10 +143,12 @@ export default function BenchmarkRun() {
         </div>
 
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 16, fontSize: 15 }}>Options</h3>
           <div className="toggle-row">
             <input type="checkbox" id="use_rag" checked={form.use_rag} onChange={e => set('use_rag', e.target.checked)} />
-            <label htmlFor="use_rag" style={{ marginBottom: 0 }}>Use ChromaDB memory during generation (RAG retrieval)</label>
+            <div>
+              <div className="toggle-label">Use RAG memory</div>
+              <div className="toggle-hint">Retrieve similar examples from ChromaDB during generation</div>
+            </div>
           </div>
         </div>
 

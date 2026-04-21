@@ -69,6 +69,7 @@ def list_examples(page: int = 1, limit: int = 20, test_type: str = ""):
                 "id": ids[i] if i < len(ids) else "",
                 "fn_name": meta.get("fn_name", ""),
                 "fn_file": meta.get("fn_file", ""),
+                "fn_source": meta.get("fn_source", ""),
                 "repo_url": meta.get("repo_url", ""),
                 "test_type": meta.get("test_type", ""),
                 "passed": meta.get("passed", 0),
@@ -89,8 +90,8 @@ analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 
 
 @analytics_router.get("/summary")
-def get_summary(db: Session = Depends(get_db)):
-    return store.summary_stats(db)
+def get_summary(filter: str = "benchmark", db: Session = Depends(get_db)):
+    return store.summary_stats(db, mode_filter=filter)
 
 
 router.include_router(vector_router)

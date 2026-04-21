@@ -334,12 +334,31 @@ def _setup_run_env(repo_dir: str) -> tuple[str | None, str | None]:
     return py, venv_dir
 
 
+# ── DB persistence ────────────────────────────────────────────────────────────
+
+def _add_to_db(run_id: int, result: dict) -> None:
+    from api.store import session_scope, update_run, save_function_result, finalize_run
+    from api.constants import RunStatus
+    from datetime import datetime
+
+    with session_scope() as db:
+        update_run(db, run_id,
+            status=RunStatus.DONE,
+            output_dir=result["output_dir"],
+            finished_at=datetime.utcnow(),
+        )
+        for fn_result in result.get("results", [result]):
+            save_function_result(db, run_id, fn_result)
+        finalize_run(db, run_id)
+
+
 # ── Public API ────────────────────────────────────────────────────────────────
 
 def run_pipeline(
     repo_url: str,
     fn_name: str,
     *,
+    run_id: int | None = None,
     description: str = "",
     provider: str = "deepseek",
     model: str | None = None,
@@ -407,7 +426,7 @@ def run_pipeline(
 
         failures = _parse_failures(outcomes)
 
-        return {
+        result = {
             "status": "done", "error": None,
             "output_dir": run_dir, "test_dir": test_dir,
             "fn_name": fn["name"], "fn_file": fn["file_path"],
@@ -416,10 +435,16 @@ def run_pipeline(
             "coverage": coverage_map,
             "repair_attempts": repair_log,
         }
+        if run_id is not None:
+            _add_to_db(run_id, result)
+        return result
     except Exception as e:
-        return {"status": "error", "error": str(e), "output_dir": run_dir,
-                "test_dir": "", "fn_name": fn_name, "fn_file": "",
-                "failures": [], "test_outcomes": {}}
+        result = {"status": "error", "error": str(e), "output_dir": run_dir,
+                  "test_dir": "", "fn_name": fn_name, "fn_file": "",
+                  "failures": [], "test_outcomes": {}}
+        if run_id is not None:
+            _add_to_db(run_id, result)
+        return result
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         if venv_dir:
@@ -452,6 +477,7 @@ jobs:
 def run_project_for_api(
     repo_url: str,
     *,
+    run_id: int | None = None,
     provider: str = "deepseek",
     model: str | None = None,
     preset: str = "default",
@@ -572,15 +598,18 @@ def run_project_for_api(
 
         ok = sum(1 for r in results if r["status"] == "done")
         print(f"\nDone. {ok}/{total} functions → {run_dir}")
-        return {
+        result = {
             "status": "done",
             "output_dir": run_dir,
             "project_name": project_name,
             "results": results,
             "total_functions": total,
         }
+        if run_id is not None:
+            _add_to_db(run_id, result)
+        return result
     except Exception as e:
-        return {
+        result = {
             "status": "error",
             "error": str(e),
             "output_dir": run_dir,
@@ -588,6 +617,9 @@ def run_project_for_api(
             "results": [],
             "total_functions": 0,
         }
+        if run_id is not None:
+            _add_to_db(run_id, result)
+        return result
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
         if venv_dir:

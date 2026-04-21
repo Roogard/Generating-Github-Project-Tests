@@ -72,93 +72,41 @@ def delete_run(db: Session, run_id: int) -> bool:
 
 # ── persistence of one pipeline result ─────────────────────────────────────
 
-def _read_if_exists(path: str) -> str | None:
-    if not path or not os.path.isfile(path):
-        return None
-    with open(path, encoding="utf-8") as fh:
-        return fh.read()
-
-
-def _find_test_code(test_dir: str, fn_name: str) -> tuple[str | None, str | None, str | None, str | None]:
-    """Locate whitebox + blackbox test files for a function. Tries named variant first,
-    then falls back to the generic single-function filenames. Returns (wb_code, bb_code,
-    wb_path, bb_path)."""
-    if not test_dir or not os.path.isdir(test_dir):
-        return None, None, None, None
-    candidates = [
-        (os.path.join(test_dir, f"test_{fn_name}_whitebox.py"),
-         os.path.join(test_dir, f"test_{fn_name}_blackbox.py")),
-        (os.path.join(test_dir, "test_whitebox.py"),
-         os.path.join(test_dir, "test_blackbox.py")),
-    ]
-    for wb_path, bb_path in candidates:
-        wb = _read_if_exists(wb_path)
-        bb = _read_if_exists(bb_path)
-        if wb or bb:
-            return wb, bb, wb_path if wb else None, bb_path if bb else None
-    return None, None, None, None
-
-
 def save_function_result(db: Session, run_id: int, result: dict) -> Function:
-    """Persist one function result: Function row with denormalized wb/bb code."""
     test_dir = result.get("test_dir", "")
-    fn_name = result["fn_name"]
-    wb_code, bb_code, wb_path, bb_path = _find_test_code(test_dir, fn_name)
+    wb_path = os.path.join(test_dir, "test_whitebox.py")
+    bb_path = os.path.join(test_dir, "test_blackbox.py")
+    wb_code = open(wb_path).read() if os.path.isfile(wb_path) else None
+    bb_code = open(bb_path).read() if os.path.isfile(bb_path) else None
 
-    outcomes = result.get("test_outcomes", {}) or {}
-    coverage = result.get("coverage", {}) or {}
-
-    def _counts(path: str | None) -> tuple[int, int]:
-        if not path:
-            return 0, 0
-        o = outcomes.get(path, {})
-        return len(o.get("passed", [])), len(o.get("failed", []))
-
-    wb_pass, wb_fail = _counts(wb_path)
-    bb_pass, bb_fail = _counts(bb_path)
-
-    cov_vals = [
-        coverage.get(p, {}).get("coverage_pct")
-        for p in (wb_path, bb_path) if p
-    ]
-    cov_vals = [v for v in cov_vals if v is not None]
-    coverage_pct = round(sum(cov_vals) / len(cov_vals), 2) if cov_vals else None
+    outcomes = result.get("test_outcomes", {})
+    wb_pass = len(outcomes.get(wb_path, {}).get("passed", []))
+    wb_fail = len(outcomes.get(wb_path, {}).get("failed", []))
+    bb_pass = len(outcomes.get(bb_path, {}).get("passed", []))
+    bb_fail = len(outcomes.get(bb_path, {}).get("failed", []))
 
     fn = Function(
-        run_id=run_id,
-        name=fn_name,
-        file_path=result.get("fn_file", ""),
-        source=result.get("fn_source", ""),
-        whitebox_code=wb_code,
-        blackbox_code=bb_code,
-        tests_passed=wb_pass + bb_pass,
-        tests_failed=wb_fail + bb_fail,
-        coverage_pct=coverage_pct,
+        run_id=run_id, name=result["fn_name"], file_path=result.get("fn_file", ""),
+        source=result.get("fn_source", ""), whitebox_code=wb_code, blackbox_code=bb_code,
+        tests_passed=wb_pass + bb_pass, tests_failed=wb_fail + bb_fail,
     )
     db.add(fn)
     db.flush()
     return fn
 
 
-def finalize_run(db: Session, run_id: int) -> Run | None:
-    """Aggregate child Function outcomes onto the Run row. Call after all
-    save_function_result() calls for a given run have been issued."""
+def finalize_run(db: Session, run_id: int) -> Run:
     run = db.get(Run, run_id)
-    if run is None:
-        return None
     agg = db.query(
-        func.coalesce(func.sum(Function.tests_passed), 0),
-        func.coalesce(func.sum(Function.tests_failed), 0),
+        func.sum(Function.tests_passed),
+        func.sum(Function.tests_failed),
         func.avg(Function.coverage_pct),
     ).filter(Function.run_id == run_id).first()
-    passed, failed, avg_cov = agg
-    run.tests_passed = int(passed or 0)
-    run.tests_failed = int(failed or 0)
-    # tests_run only from pipeline-level field is set elsewhere (batch modes)
-    # for API-triggered single/project runs we approximate as passed + failed
-    if run.tests_run == 0:
-        run.tests_run = run.tests_passed + run.tests_failed
-    run.avg_coverage_pct = round(float(avg_cov), 2) if avg_cov is not None else None
+
+    run.tests_passed = int(agg[0] or 0)
+    run.tests_failed = int(agg[1] or 0)
+    run.tests_run = run.tests_passed + run.tests_failed
+    run.avg_coverage_pct = round(float(agg[2]), 2) if agg[2] else None
     return run
 
 
@@ -196,6 +144,7 @@ def score_function(
 # ── analytics summary ──────────────────────────────────────────────────────
 
 BENCH_MODES = ("quixbugs",)
+USER_MODES = ("single", "project")
 
 
 def _bench_bucket(rows) -> dict:
@@ -219,82 +168,128 @@ def _bench_bucket(rows) -> dict:
     }
 
 
-def summary_stats(db: Session) -> dict:
-    """Benchmark-interpreter dashboard. Aggregates SWT-bench transitions across
-    QuixBugs runs, with base-vs-RAG, per-project, and per-provider splits for
-    comparison."""
-    bench_runs = (
-        db.query(Run)
-        .filter(Run.status == RunStatus.DONE, Run.mode.in_(BENCH_MODES))
-        .all()
-    )
-
-    overall = _bench_bucket(bench_runs)
-
-    baseline = _bench_bucket([r for r in bench_runs if not r.use_rag])
-    with_rag = _bench_bucket([r for r in bench_runs if r.use_rag])
-
-    def _project_name(repo_url: str) -> str:
-        # "quixbugs:foo" → "quixbugs/foo"
-        if repo_url.startswith("quixbugs:"):
-            return f"quixbugs/{repo_url.split(':', 1)[1]}"
-        return repo_url
-
-    by_project: dict[str, list] = {}
-    for r in bench_runs:
-        by_project.setdefault(_project_name(r.repo_url), []).append(r)
-    projects = [
-        {"project": name, **_bench_bucket(rows)}
-        for name, rows in sorted(by_project.items())
-    ]
-
-    by_provider: dict[str, list] = {}
-    for r in bench_runs:
-        by_provider.setdefault(r.provider or "unknown", []).append(r)
-    providers = [
-        {"provider": name, **_bench_bucket(rows)}
-        for name, rows in sorted(by_provider.items())
-    ]
-
-    recent = (
-        db.query(Run)
-        .filter(Run.status == RunStatus.DONE, Run.mode.in_(BENCH_MODES))
-        .order_by(Run.created_at.desc())
-        .limit(20)
-        .all()
-    )
-    recent_runs = [
-        {
-            "id": r.id,
-            "repo_url": r.repo_url,
-            "mode": r.mode,
-            "benchmark_id": r.benchmark_id,
-            "provider": r.provider,
-            "use_rag": r.use_rag,
-            "detected": r.detected,
-            "resolved": r.resolved,
-            "f2p": r.f2p, "f2f": r.f2f, "p2f": r.p2f, "p2p": r.p2p,
-            "tests_run": r.tests_run,
-            "elapsed_seconds": r.elapsed_seconds,
-            "created_at": r.created_at,
-            "finished_at": r.finished_at,
-        }
-        for r in recent
-    ]
-
-    rag_count = 0
-    try:
-        from src.vectordb import get_collection
-        rag_count = get_collection().count()
-    except Exception:
-        pass
-
+def _user_bucket(rows) -> dict:
+    total = len(rows)
     return {
-        "overall": overall,
-        "baseline": baseline,
-        "with_rag": with_rag,
-        "by_project": projects,
-        "by_provider": providers,
-        "rag_examples": rag_count,
-        "recent_runs": recent_runs,
+        "runs": total,
+        "tests_passed": sum(r.tests_passed or 0 for r in rows),
+        "tests_failed": sum(r.tests_failed or 0 for r in rows),
+        "avg_coverage": round(
+            sum(r.avg_coverage_pct or 0 for r in rows) / total, 1
+        ) if total else 0.0,
+    }
+
+
+def summary_stats(db: Session, mode_filter: str = "benchmark") -> dict:
+    """Analytics dashboard. mode_filter: 'benchmark' | 'user' | 'both'."""
+
+    def _bench_section():
+        bench_runs = (
+            db.query(Run)
+            .filter(Run.status == RunStatus.DONE, Run.mode.in_(BENCH_MODES))
+            .all()
+        )
+
+        def _project_name(repo_url: str) -> str:
+            if repo_url.startswith("quixbugs:"):
+                return f"quixbugs/{repo_url.split(':', 1)[1]}"
+            return repo_url
+
+        by_project: dict[str, list] = {}
+        for r in bench_runs:
+            by_project.setdefault(_project_name(r.repo_url), []).append(r)
+
+        by_provider: dict[str, list] = {}
+        for r in bench_runs:
+            by_provider.setdefault(r.provider or "unknown", []).append(r)
+
+        recent = (
+            db.query(Run)
+            .filter(Run.status == RunStatus.DONE, Run.mode.in_(BENCH_MODES))
+            .order_by(Run.created_at.desc())
+            .limit(20)
+            .all()
+        )
+
+        rag_count = 0
+        try:
+            from src.vectordb import get_collection
+            rag_count = get_collection().count()
+        except Exception:
+            pass
+
+        return {
+            "overall": _bench_bucket(bench_runs),
+            "baseline": _bench_bucket([r for r in bench_runs if not r.use_rag]),
+            "with_rag": _bench_bucket([r for r in bench_runs if r.use_rag]),
+            "by_project": [
+                {"project": name, **_bench_bucket(rows)}
+                for name, rows in sorted(by_project.items())
+            ],
+            "by_provider": [
+                {"provider": name, **_bench_bucket(rows)}
+                for name, rows in sorted(by_provider.items())
+            ],
+            "rag_examples": rag_count,
+            "recent_runs": [
+                {
+                    "id": r.id,
+                    "repo_url": r.repo_url,
+                    "mode": r.mode,
+                    "benchmark_id": r.benchmark_id,
+                    "provider": r.provider,
+                    "use_rag": r.use_rag,
+                    "detected": r.detected,
+                    "resolved": r.resolved,
+                    "f2p": r.f2p, "f2f": r.f2f, "p2f": r.p2f, "p2p": r.p2p,
+                    "tests_run": r.tests_run,
+                    "elapsed_seconds": r.elapsed_seconds,
+                    "created_at": r.created_at,
+                    "finished_at": r.finished_at,
+                }
+                for r in recent
+            ],
+        }
+
+    def _user_section():
+        user_runs = (
+            db.query(Run)
+            .filter(Run.status == RunStatus.DONE, Run.mode.in_(USER_MODES))
+            .all()
+        )
+        recent = (
+            db.query(Run)
+            .filter(Run.status == RunStatus.DONE, Run.mode.in_(USER_MODES))
+            .order_by(Run.created_at.desc())
+            .limit(20)
+            .all()
+        )
+        return {
+            "summary": _user_bucket(user_runs),
+            "recent_runs": [
+                {
+                    "id": r.id,
+                    "repo_url": r.repo_url,
+                    "mode": r.mode,
+                    "provider": r.provider,
+                    "use_rag": r.use_rag,
+                    "tests_passed": r.tests_passed,
+                    "tests_failed": r.tests_failed,
+                    "avg_coverage_pct": r.avg_coverage_pct,
+                    "created_at": r.created_at,
+                    "finished_at": r.finished_at,
+                }
+                for r in recent
+            ],
+        }
+
+    if mode_filter == "benchmark":
+        return {"mode": "benchmark", **_bench_section()}
+    if mode_filter == "user":
+        return {"mode": "user", **_user_section()}
+    # both
+    return {
+        "mode": "both",
+        "benchmark": _bench_section(),
+        "user": _user_section(),
     }

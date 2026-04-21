@@ -188,7 +188,7 @@ def _run_one_quixbug(program: str, qb_dir: str, run_dir: str, cfg: dict, timeout
         golden = f_to_p > 0 and f_to_f == 0
 
         ingested = False
-        if ingest_golden and golden:
+        if ingest_golden and resolved:
             wb_path = os.path.join(test_dir, "test_whitebox.py")
             bb_path = os.path.join(test_dir, "test_blackbox.py")
             wb_code = open(wb_path, encoding="utf-8").read() if os.path.isfile(wb_path) else ""

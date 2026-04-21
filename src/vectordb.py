@@ -1,16 +1,8 @@
-"""ChromaDB vector store for RAG-based test generation.
-
-Embeds function source code so that semantically similar past examples
-can be retrieved as few-shot context before LLM test generation calls.
-"""
 from __future__ import annotations
-
-import hashlib
-
 import chromadb
+import os
 
-import os as _os
-CHROMA_PATH = _os.environ.get("CHROMA_PATH", "./chroma_db")
+CHROMA_PATH = os.environ.get("CHROMA_PATH", "./chroma_db")
 COLLECTION_NAME = "generated_tests"
 
 _client: chromadb.PersistentClient | None = None
@@ -37,78 +29,48 @@ def ingest_example(
     failed: int = 0,
     coverage_pct: float | None = None,
 ) -> None:
-    """Embed fn['source'] and upsert whitebox + blackbox test records.
-
-    Uses the function source as the embedding anchor so future queries
-    against a new function's source retrieve structurally similar examples.
-    """
-    source = fn.get("source", "")
-    if not source or not source.strip():
-        print(f"[rag] skip ingest: empty source for fn={fn.get('name')!r}")
-        return
+    source = fn["source"]
+    fn_name = fn["name"]
     collection = get_collection()
-    source_hash = hashlib.sha256(source.encode()).hexdigest()[:16]
-    fn_name = fn.get("name", "unknown")
-    fn_file = fn.get("file_path", "")
+
     base_meta = {
         "fn_name": fn_name,
-        "fn_file": fn_file,
+        "fn_file": fn.get("file_path", ""),
         "fn_source": source,
         "repo_url": repo_url,
         "passed": passed,
         "failed": failed,
-        "coverage_pct": coverage_pct if coverage_pct is not None else -1.0,
+        "coverage_pct": coverage_pct or -1.0,
     }
-    records = [
-        ("whitebox", whitebox_code),
-        ("blackbox", blackbox_code),
-    ]
+
     ids, documents, metadatas = [], [], []
-    for test_type, test_code in records:
-        if not test_code or not test_code.strip():
-            continue
-        ids.append(f"fn_{source_hash}_{test_type}")
-        documents.append(source)
-        metadatas.append({**base_meta, "test_type": test_type, "test_code": test_code})
-    if not ids:
-        print(f"[rag] skip ingest: no test code for fn={fn_name!r}")
-        return
+    for test_type, test_code in [("whitebox", whitebox_code), ("blackbox", blackbox_code)]:
+        if test_code:
+            ids.append(f"{fn_name}_{test_type}")
+            documents.append(source)
+            metadatas.append({**base_meta, "test_type": test_type, "test_code": test_code})
+
     collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
-    print(f"[rag] ingested {len(ids)} example(s) for fn={fn_name!r} (count={collection.count()})")
 
 
-def retrieve_examples(
-    fn_source: str,
-    test_type: str,
-    n_results: int = 3,
-) -> list[dict]:
-    """Return up to n_results past examples whose function source is semantically similar.
-
-    Each result: {fn_name, fn_source, test_code, passed, failed, coverage_pct}
-    Returns [] on empty collection, wrong test_type filter, or any exception.
-    """
-    try:
-        if not fn_source or not fn_source.strip():
-            return []
-        collection = get_collection()
-        if collection.count() == 0:
-            return []
-        results = collection.query(
-            query_texts=[fn_source],
-            n_results=min(n_results, collection.count()),
-            where={"test_type": test_type},
-        )
-        examples = []
-        for meta in (results.get("metadatas") or [[]])[0]:
-            cov = meta.get("coverage_pct", -1.0)
-            examples.append({
-                "fn_name": meta.get("fn_name", ""),
-                "fn_source": meta.get("fn_source", ""),
-                "test_code": meta.get("test_code", ""),
-                "passed": meta.get("passed", 0),
-                "failed": meta.get("failed", 0),
-                "coverage_pct": cov if cov >= 0 else None,
-            })
-        return examples
-    except Exception:
+def retrieve_examples(fn_source: str, test_type: str, n_results: int = 3) -> list[dict]:
+    collection = get_collection()
+    if collection.count() == 0:
         return []
+
+    results = collection.query(
+        query_texts=[fn_source],
+        n_results=min(n_results, collection.count()),
+        where={"test_type": test_type},
+    )
+
+    examples = []
+    for meta in results["metadatas"][0]:
+        examples.append({
+            "fn_name": meta["fn_name"],
+            "fn_source": meta["fn_source"],
+            "test_code": meta["test_code"],
+            "passed": meta["passed"],
+            "failed": meta["failed"],
+        })
+    return examples
