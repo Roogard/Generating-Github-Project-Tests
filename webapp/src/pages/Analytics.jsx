@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { getAnalyticsSummary } from '../api.js'
 
-async function fetchSummary() {
-  const res = await fetch('/api/analytics/summary')
-  if (!res.ok) throw new Error(await res.text())
-  return res.json()
-}
-
-function StatCard({ label, value, sub, color }) {
+function Stat({ label, value, sub, color }) {
   return (
     <div className="stat-card" style={{ flex: 1, minWidth: 130 }}>
       <div className="stat-label">{label}</div>
@@ -17,50 +12,69 @@ function StatCard({ label, value, sub, color }) {
   )
 }
 
-function CoverageBar({ dist }) {
-  const total = dist.high + dist.medium + dist.low
-  if (total === 0) return <p style={{ color: '#64748b', fontSize: 13 }}>No coverage data yet.</p>
-
-  const pct = n => Math.round((n / total) * 100)
+function BenchCard({ title, bucket, hint }) {
+  const empty = !bucket.runs
   return (
-    <div>
-      <div style={{ display: 'flex', height: 28, borderRadius: 6, overflow: 'hidden', marginBottom: 10 }}>
-        {dist.high > 0 && (
-          <div style={{ width: `${pct(dist.high)}%`, background: '#059669', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', fontWeight: 600 }}>
-            {pct(dist.high)}%
+    <div className="card" style={{ flex: 1, minWidth: 280 }}>
+      <h3 style={{ fontSize: 14, marginBottom: 4 }}>{title}</h3>
+      {hint && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 12 }}>{hint}</div>}
+      {empty ? (
+        <p style={{ color: '#64748b', fontSize: 13, margin: 0 }}>No runs yet.</p>
+      ) : (
+        <>
+          <div className="stat-row" style={{ marginBottom: 10 }}>
+            <Stat label="Runs" value={bucket.runs} />
+            <Stat label="S (Resolved)" value={`${bucket.resolved}`}
+                  color={bucket.resolved > 0 ? '#6ee7b7' : '#94a3b8'}
+                  sub={`${bucket.resolved_rate}% of runs`} />
+            <Stat label="Detected" value={bucket.detected}
+                  sub={`${bucket.detection_rate}% of runs`} />
           </div>
-        )}
-        {dist.medium > 0 && (
-          <div style={{ width: `${pct(dist.medium)}%`, background: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', fontWeight: 600 }}>
-            {pct(dist.medium)}%
+          <div className="stat-row">
+            <Stat label="Σ F→P" value={bucket.f2p} color="#6ee7b7" />
+            <Stat label="Σ F→F" value={bucket.f2f} color={bucket.f2f > 0 ? '#fca5a5' : '#94a3b8'} />
+            <Stat label="Σ P→F" value={bucket.p2f} color={bucket.p2f > 0 ? '#fca5a5' : '#94a3b8'} />
+            <Stat label="Σ P→P" value={bucket.p2p} />
           </div>
-        )}
-        {dist.low > 0 && (
-          <div style={{ width: `${pct(dist.low)}%`, background: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', fontWeight: 600 }}>
-            {pct(dist.low)}%
-          </div>
-        )}
-      </div>
-      <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#94a3b8' }}>
-        <span><span style={{ color: '#059669' }}>■</span> High ≥80%: {dist.high} tests</span>
-        <span><span style={{ color: '#d97706' }}>■</span> Mid 50–80%: {dist.medium} tests</span>
-        <span><span style={{ color: '#dc2626' }}>■</span> Low &lt;50%: {dist.low} tests</span>
-      </div>
+        </>
+      )}
     </div>
   )
 }
 
-function RepoName(url) {
-  try { return new URL(url).pathname.replace(/^\//, '').replace(/\.git$/, '') }
-  catch { return url }
-}
-
-function elapsed(created, finished) {
-  if (!created || !finished) return null
-  const secs = Math.round((new Date(finished + 'Z') - new Date(created + 'Z')) / 1000)
-  if (secs < 60) return `${secs}s`
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`
-  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`
+function BreakdownTable({ rows, labelKey, labelTitle }) {
+  if (!rows.length) return <p style={{ color: '#64748b', fontSize: 13 }}>No data yet.</p>
+  return (
+    <table>
+      <thead>
+        <tr>
+          <th>{labelTitle}</th>
+          <th style={{ textAlign: 'center' }}>Runs</th>
+          <th style={{ textAlign: 'center' }}>Resolved</th>
+          <th style={{ textAlign: 'center' }}>F→P</th>
+          <th style={{ textAlign: 'center' }}>F→F</th>
+          <th style={{ textAlign: 'center' }}>P→F</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map(r => (
+          <tr key={r[labelKey]}>
+            <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{r[labelKey]}</td>
+            <td style={{ textAlign: 'center' }}>{r.runs}</td>
+            <td style={{ textAlign: 'center' }}>
+              <span style={{ color: r.resolved > 0 ? '#6ee7b7' : '#64748b', fontWeight: 600 }}>
+                {r.resolved}/{r.runs}
+              </span>
+              <div style={{ fontSize: 11, color: '#475569' }}>{r.resolved_rate}%</div>
+            </td>
+            <td style={{ textAlign: 'center', color: '#6ee7b7' }}>{r.f2p}</td>
+            <td style={{ textAlign: 'center', color: r.f2f > 0 ? '#fca5a5' : '#64748b' }}>{r.f2f}</td>
+            <td style={{ textAlign: 'center', color: r.p2f > 0 ? '#fca5a5' : '#64748b' }}>{r.p2f}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
 }
 
 export default function Analytics() {
@@ -69,130 +83,108 @@ export default function Analytics() {
   const nav = useNavigate()
 
   useEffect(() => {
-    fetchSummary().then(setData).catch(e => setError(e.message))
+    getAnalyticsSummary().then(setData).catch(e => setError(e.message))
   }, [])
 
   if (error) return <div className="page"><div className="alert alert-error">{error}</div></div>
-  if (!data) return <div className="page"><p style={{ color: '#64748b' }}>Loading analytics...</p></div>
+  if (!data) return <div className="page"><p style={{ color: '#64748b' }}>Loading…</p></div>
 
-  const {
-    total_runs, total_functions, total_tests, total_passed, total_failed,
-    pass_rate, avg_coverage_pct, coverage_distribution,
-    total_bug_detections, runs_with_bugs, runs_with_fixes,
-    rag_examples, recent_runs,
-  } = data
+  const { overall, baseline, with_rag, by_project, by_provider, rag_examples, recent_runs } = data
 
   return (
     <div className="page">
       <div className="page-header">
-        <h1 className="page-title">Analytics</h1>
-        <span style={{ fontSize: 13, color: '#64748b' }}>Across all completed runs</span>
+        <h1 className="page-title">Benchmark Interpreter</h1>
+        <span style={{ fontSize: 13, color: '#64748b' }}>
+          SWT-bench across QuixBugs runs
+        </span>
       </div>
 
-      {/* ── Hero metrics ── */}
-      <div className="stat-row" style={{ marginBottom: 28 }}>
-        <StatCard label="Repos Analyzed" value={total_runs} />
-        <StatCard label="Functions Tested" value={total_functions} />
-        <StatCard label="Tests Generated" value={total_tests} />
-        <StatCard label="Pass Rate" value={total_passed + total_failed > 0 ? `${pass_rate}%` : '—'} color={pass_rate >= 70 ? '#6ee7b7' : '#fca5a5'} sub={`${total_passed}p / ${total_failed}f`} />
-        <StatCard label="Avg Coverage" value={avg_coverage_pct > 0 ? `${avg_coverage_pct}%` : '—'} />
-        <StatCard label="Bugs Detected" value={total_bug_detections} color={total_bug_detections > 0 ? '#fca5a5' : '#6ee7b7'} sub={`in ${runs_with_bugs} run(s)`} />
+      <div className="stat-row" style={{ marginBottom: 24 }}>
+        <Stat label="Benchmark Runs" value={overall.runs} />
+        <Stat label="Resolved (S)" value={overall.resolved}
+              color={overall.resolved > 0 ? '#6ee7b7' : '#94a3b8'}
+              sub={`${overall.resolved_rate}% of runs`} />
+        <Stat label="Detected" value={overall.detected}
+              sub={`${overall.detection_rate}% of runs`} />
+        <Stat label="Applicable (W)" value={overall.patch_applied}
+              sub="patch applied cleanly" />
+        <Stat label="RAG examples" value={rag_examples}
+              sub="in ChromaDB" />
       </div>
 
-      {/* ── Two column section ── */}
+      <h2 style={{ fontSize: 14, margin: '0 0 10px', color: '#94a3b8' }}>
+        Base vs RAG
+      </h2>
+      <div style={{ display: 'flex', gap: 16, marginBottom: 28, flexWrap: 'wrap' }}>
+        <BenchCard title="Baseline (no RAG)" bucket={baseline}
+                   hint="use_rag = false" />
+        <BenchCard title="With RAG" bucket={with_rag}
+                   hint="use_rag = true" />
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-
-        {/* Coverage distribution */}
-        <div className="card">
-          <h3 style={{ fontSize: 15, marginBottom: 14 }}>Test Coverage Distribution</h3>
-          <CoverageBar dist={coverage_distribution} />
-          {avg_coverage_pct > 0 && (
-            <p style={{ marginTop: 14, fontSize: 13, color: '#94a3b8' }}>
-              Average coverage across all generated test suites: <strong style={{ color: '#f8fafc' }}>{avg_coverage_pct}%</strong>
-            </p>
-          )}
+        <div className="card" style={{ padding: 0 }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155' }}>
+            <h3 style={{ fontSize: 14, margin: 0 }}>By project</h3>
+          </div>
+          <div style={{ padding: by_project.length ? 0 : 16 }}>
+            <BreakdownTable rows={by_project} labelKey="project" labelTitle="Project" />
+          </div>
         </div>
 
-        {/* AI / RAG flywheel */}
-        <div className="card">
-          <h3 style={{ fontSize: 15, marginBottom: 14 }}>AI Test Memory (RAG)</h3>
-          <div style={{ display: 'flex', gap: 16, marginBottom: 14 }}>
-            <div className="stat-card" style={{ flex: 1 }}>
-              <div className="stat-label">Examples Stored</div>
-              <div className="stat-value">{rag_examples}</div>
-            </div>
-            <div className="stat-card" style={{ flex: 1 }}>
-              <div className="stat-label">Fix Passes Run</div>
-              <div className="stat-value">{runs_with_fixes}</div>
-            </div>
+        <div className="card" style={{ padding: 0 }}>
+          <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155' }}>
+            <h3 style={{ fontSize: 14, margin: 0 }}>By provider</h3>
           </div>
-          <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6 }}>
-            Each completed run stores successful test examples in ChromaDB. The LLM retrieves semantically similar past examples as few-shot context before generating new tests — the system gets smarter with every run.
-          </p>
+          <div style={{ padding: by_provider.length ? 0 : 16 }}>
+            <BreakdownTable rows={by_provider} labelKey="provider" labelTitle="Provider" />
+          </div>
         </div>
       </div>
 
-      {/* ── Run history table ── */}
       <div className="card" style={{ padding: 0 }}>
-        <div style={{ padding: '16px 20px', borderBottom: '1px solid #334155' }}>
-          <h3 style={{ fontSize: 15 }}>Run History</h3>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid #334155' }}>
+          <h3 style={{ fontSize: 14, margin: 0 }}>Recent benchmark runs</h3>
         </div>
         {recent_runs.length === 0 ? (
           <p style={{ padding: 32, textAlign: 'center', color: '#64748b' }}>
-            No completed runs yet. <span style={{ color: '#60a5fa', cursor: 'pointer' }} onClick={() => nav('/runs/new')}>Start one →</span>
+            No benchmark runs yet.
           </p>
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Repository</th>
+                <th>Instance</th>
                 <th>Mode</th>
-                <th style={{ textAlign: 'center' }}>Functions</th>
-                <th style={{ textAlign: 'center' }}>Pass Rate</th>
-                <th style={{ textAlign: 'center' }}>Avg Coverage</th>
-                <th style={{ textAlign: 'center' }}>Bugs Found</th>
-                <th style={{ textAlign: 'center' }}>Fix</th>
-                <th style={{ textAlign: 'right' }}>Duration</th>
+                <th>Provider</th>
+                <th style={{ textAlign: 'center' }}>RAG</th>
+                <th style={{ textAlign: 'center' }}>F→P</th>
+                <th style={{ textAlign: 'center' }}>F→F</th>
+                <th style={{ textAlign: 'center' }}>P→F</th>
+                <th style={{ textAlign: 'center' }}>Resolved</th>
               </tr>
             </thead>
             <tbody>
               {recent_runs.map(r => (
                 <tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => nav(`/runs/${r.id}`)}>
-                  <td>
-                    <div style={{ fontWeight: 500 }}>{RepoName(r.repo_url)}</div>
-                    <div style={{ fontSize: 11, color: '#475569' }}>#{r.id}</div>
+                  <td style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                    {r.benchmark_id || `#${r.id}`}
                   </td>
-                  <td style={{ fontSize: 12, color: '#64748b' }}>
-                    {r.function_name || 'whole-project'}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>{r.function_count}</td>
+                  <td style={{ fontSize: 12, color: '#64748b' }}>{r.mode}</td>
+                  <td style={{ fontSize: 12, color: '#64748b' }}>{r.provider || '—'}</td>
                   <td style={{ textAlign: 'center' }}>
-                    {r.pass_rate != null ? (
-                      <span style={{ color: r.pass_rate >= 70 ? '#6ee7b7' : r.pass_rate >= 40 ? '#fde68a' : '#fca5a5', fontWeight: 600 }}>
-                        {r.pass_rate}%
-                      </span>
-                    ) : <span style={{ color: '#475569' }}>—</span>}
-                    {r.pass_rate != null && (
-                      <div style={{ fontSize: 11, color: '#475569' }}>{r.total_passed}p / {r.total_failed}f</div>
+                    {r.use_rag ? <span style={{ color: '#6ee7b7' }}>✓</span> : <span style={{ color: '#475569' }}>—</span>}
+                  </td>
+                  <td style={{ textAlign: 'center', color: '#6ee7b7' }}>{r.f2p}</td>
+                  <td style={{ textAlign: 'center', color: r.f2f > 0 ? '#fca5a5' : '#64748b' }}>{r.f2f}</td>
+                  <td style={{ textAlign: 'center', color: r.p2f > 0 ? '#fca5a5' : '#64748b' }}>{r.p2f}</td>
+                  <td style={{ textAlign: 'center' }}>
+                    {r.resolved ? (
+                      <span style={{ color: '#6ee7b7', fontWeight: 600 }}>YES</span>
+                    ) : (
+                      <span style={{ color: '#475569' }}>—</span>
                     )}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    {r.avg_coverage_pct != null ? (
-                      <span style={{ color: r.avg_coverage_pct >= 70 ? '#6ee7b7' : '#fde68a' }}>
-                        {r.avg_coverage_pct}%
-                      </span>
-                    ) : <span style={{ color: '#475569' }}>—</span>}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    {r.bugs_detected > 0
-                      ? <span className="chip chip-fail">✗ {r.bugs_detected}</span>
-                      : <span style={{ color: '#475569' }}>0</span>}
-                  </td>
-                  <td style={{ textAlign: 'center' }}>
-                    {r.has_fix ? <span className="chip chip-pass">✓</span> : <span style={{ color: '#475569' }}>—</span>}
-                  </td>
-                  <td style={{ textAlign: 'right', fontSize: 12, color: '#64748b' }}>
-                    {elapsed(r.created_at, r.finished_at) || '—'}
                   </td>
                 </tr>
               ))}

@@ -2,7 +2,7 @@
 **/*.pyc
 .venv
 .env
-ghtest.db
+ggpt.db
 chroma_db/
 eval_output/
 output/

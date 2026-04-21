@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getRun, getRunStatus, downloadRun } from '../api.js'
+import { getRun, getRunStatus, downloadRun, promoteRunToMemory } from '../api.js'
+import { useAdmin, isBenchmarkMode } from '../admin.js'
 
 function Badge({ status }) {
   return <span className={`badge badge-${status}`}>{status}</span>
@@ -19,12 +20,63 @@ function ProgressSection({ current, total, status }) {
   )
 }
 
+function BenchmarkPanel({ run }) {
+  if (!isBenchmarkMode(run.mode)) return null
+  const dot = (label, value, tone) => (
+    <div className="stat-card" style={{ minWidth: 90 }}>
+      <div className="stat-label">{label}</div>
+      <div className="stat-value" style={{ fontSize: 18, color: tone }}>{value}</div>
+    </div>
+  )
+  return (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <h3 style={{ fontSize: 14, marginBottom: 10 }}>
+        SWT-bench Oracle  ·  <span style={{ color: '#64748b' }}>{run.mode}:{run.benchmark_id}</span>
+      </h3>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        {dot('F→P', run.f2p, run.f2p > 0 ? '#6ee7b7' : '#94a3b8')}
+        {dot('F→F', run.f2f, run.f2f > 0 ? '#fca5a5' : '#94a3b8')}
+        {dot('P→F', run.p2f, run.p2f > 0 ? '#fca5a5' : '#94a3b8')}
+        {dot('P→P', run.p2p ?? '—', '#94a3b8')}
+        {dot('Resolved', run.resolved ? 'YES' : 'no', run.resolved ? '#6ee7b7' : '#94a3b8')}
+      </div>
+    </div>
+  )
+}
+
+function AdminCurationBlock({ run, onPromote, promoting, promoteMsg }) {
+  return (
+    <div
+      className="card"
+      style={{ marginBottom: 20, borderColor: '#22c55e', background: '#0f1f38' }}
+    >
+      <h3 style={{ fontSize: 14, marginBottom: 10, color: '#bbf7d0' }}>
+        Admin curation
+      </h3>
+      {promoteMsg && <div className="alert alert-info" style={{ marginBottom: 10 }}>{promoteMsg}</div>}
+
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        {run.promoted_to_memory_at ? (
+          <span className="badge badge-done" title={run.promoted_to_memory_at}>
+            ✓ Promoted to memory
+          </span>
+        ) : (
+          <button className="btn-ghost btn-sm" onClick={onPromote} disabled={promoting}>
+            {promoting ? 'Promoting…' : '📥 Promote to vector DB'}
+          </button>
+        )}
+        <span style={{ fontSize: 12, color: '#64748b' }}>
+          Promote copies each qualifying function's whitebox + blackbox tests into
+          ChromaDB for RAG retrieval on future runs.
+        </span>
+      </div>
+    </div>
+  )
+}
+
 function FunctionCard({ fn }) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('whitebox')
-
-  const totalPassed = fn.tests.reduce((s, t) => s + t.passed, 0)
-  const totalFailed = fn.tests.reduce((s, t) => s + t.failed, 0)
 
   return (
     <div className="card" style={{ padding: 0, marginBottom: 12 }}>
@@ -34,79 +86,39 @@ function FunctionCard({ fn }) {
           <span style={{ fontSize: 12, color: '#64748b' }}>{fn.file_path}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {totalPassed > 0 && <span className="chip chip-pass">✓ {totalPassed}</span>}
-          {totalFailed > 0 && <span className="chip chip-fail">✗ {totalFailed}</span>}
+          {fn.tests_passed > 0 && <span className="chip chip-pass">✓ {fn.tests_passed}</span>}
+          {fn.tests_failed > 0 && <span className="chip chip-fail">✗ {fn.tests_failed}</span>}
           <span style={{ color: '#64748b', fontSize: 18 }}>{open ? '▲' : '▼'}</span>
         </div>
       </div>
 
       {open && (
         <div className="accordion-body">
-          {/* Coverage row */}
           <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-            {fn.tests.map(t => (
-              <div key={t.id} className="stat-card" style={{ minWidth: 100 }}>
-                <div className="stat-label">{t.type}</div>
-                <div className="stat-value" style={{ fontSize: 18 }}>
-                  {t.coverage_pct != null ? `${Math.round(t.coverage_pct)}%` : '—'}
-                </div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  {t.passed}p {t.failed}f
-                </div>
+            <div className="stat-card" style={{ minWidth: 100 }}>
+              <div className="stat-label">Coverage</div>
+              <div className="stat-value" style={{ fontSize: 18 }}>
+                {fn.coverage_pct != null ? `${Math.round(fn.coverage_pct)}%` : '—'}
               </div>
-            ))}
+            </div>
+            <div className="stat-card" style={{ minWidth: 100 }}>
+              <div className="stat-label">Passed</div>
+              <div className="stat-value" style={{ fontSize: 18, color: '#6ee7b7' }}>{fn.tests_passed}</div>
+            </div>
+            <div className="stat-card" style={{ minWidth: 100 }}>
+              <div className="stat-label">Failed</div>
+              <div className="stat-value" style={{ fontSize: 18, color: fn.tests_failed > 0 ? '#fca5a5' : '#6ee7b7' }}>{fn.tests_failed}</div>
+            </div>
           </div>
 
-          {/* Test code tabs */}
-          {fn.tests.length > 0 && (
-            <>
-              <div className="tabs">
-                {fn.tests.map(t => (
-                  <div key={t.type} className={`tab${tab === t.type ? ' active' : ''}`} onClick={() => setTab(t.type)}>
-                    {t.type}
-                  </div>
-                ))}
-                {fn.fixes.length > 0 && (
-                  <div className={`tab${tab === 'fix' ? ' active' : ''}`} onClick={() => setTab('fix')}>
-                    proposed fix
-                  </div>
-                )}
-                {fn.failures.length > 0 && (
-                  <div className={`tab${tab === 'failures' ? ' active' : ''}`} onClick={() => setTab('failures')}>
-                    failures ({fn.failures.length})
-                  </div>
-                )}
-              </div>
+          <div className="tabs">
+            <div className={`tab${tab === 'whitebox' ? ' active' : ''}`} onClick={() => setTab('whitebox')}>whitebox</div>
+            <div className={`tab${tab === 'blackbox' ? ' active' : ''}`} onClick={() => setTab('blackbox')}>blackbox</div>
+          </div>
 
-              {tab === 'fix' && fn.fixes[0] && (
-                <div>
-                  {fn.fixes[0].diagnosis && (
-                    <p style={{ color: '#94a3b8', marginBottom: 12, fontSize: 13 }}>{fn.fixes[0].diagnosis}</p>
-                  )}
-                  <pre className="code-block">{fn.fixes[0].fixed_code || '— no code generated —'}</pre>
-                </div>
-              )}
-
-              {tab === 'failures' && (
-                <div>
-                  {fn.failures.map((f, i) => (
-                    <div key={i} style={{ marginBottom: 16 }}>
-                      <div style={{ fontFamily: 'monospace', color: '#fca5a5', marginBottom: 4, fontSize: 13 }}>
-                        [{f.kind.toUpperCase()}] {f.test_name}
-                      </div>
-                      {f.assertion && <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>{f.assertion}</div>}
-                      {f.longrepr && <pre className="code-block" style={{ fontSize: 12 }}>{f.longrepr.slice(0, 800)}</pre>}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {['whitebox', 'blackbox'].includes(tab) && (() => {
-                const t = fn.tests.find(x => x.type === tab)
-                return t ? <pre className="code-block">{t.code || '— no code —'}</pre> : null
-              })()}
-            </>
-          )}
+          <pre className="code-block">
+            {(tab === 'whitebox' ? fn.whitebox_code : fn.blackbox_code) || '— no code —'}
+          </pre>
         </div>
       )}
     </div>
@@ -118,14 +130,35 @@ export default function RunDetail() {
   const nav = useNavigate()
   const [run, setRun] = useState(null)
   const [error, setError] = useState('')
+  const [promoting, setPromoting] = useState(false)
+  const [promoteMsg, setPromoteMsg] = useState('')
+  const admin = useAdmin()
 
   const loadFull = () => getRun(id).then(setRun).catch(e => setError(e.message))
+
+  const onPromote = async () => {
+    setPromoting(true)
+    setPromoteMsg('')
+    try {
+      const r = await promoteRunToMemory(run.id)
+      const skipSummary = Object.entries(r.skipped || {})
+        .map(([k, v]) => `${k}: ${v}`).join(', ')
+      setPromoteMsg(
+        `Ingested ${r.ingested} example${r.ingested === 1 ? '' : 's'}` +
+        (skipSummary ? ` (skipped — ${skipSummary})` : '')
+      )
+      loadFull()
+    } catch (e) {
+      setPromoteMsg(e.message)
+    } finally {
+      setPromoting(false)
+    }
+  }
 
   useEffect(() => {
     loadFull()
   }, [id])
 
-  // Poll status while running
   useEffect(() => {
     if (!run || run.status !== 'running') return
     const timer = setInterval(() => {
@@ -149,8 +182,7 @@ export default function RunDetail() {
     <div className="page"><p style={{ color: '#64748b' }}>Loading...</p></div>
   )
 
-  const totalPassed = run.functions.reduce((s, fn) => s + fn.tests.reduce((ss, t) => ss + t.passed, 0), 0)
-  const totalFailed = run.functions.reduce((s, fn) => s + fn.tests.reduce((ss, t) => ss + t.failed, 0), 0)
+  const showAdminBlock = admin && run.status === 'done'
 
   return (
     <div className="page">
@@ -159,7 +191,7 @@ export default function RunDetail() {
           <button className="btn-ghost btn-sm" style={{ marginBottom: 8 }} onClick={() => nav('/')}>← Runs</button>
           <h1 className="page-title" style={{ fontSize: 18 }}>{run.repo_url}</h1>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {run.status === 'done' && run.output_dir && (
             <button className="btn-primary" onClick={() => downloadRun(run.id)}>⬇ Download ZIP</button>
           )}
@@ -179,17 +211,28 @@ export default function RunDetail() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Tests Passed</div>
-            <div className="stat-value" style={{ color: '#6ee7b7' }}>{totalPassed}</div>
+            <div className="stat-value" style={{ color: '#6ee7b7' }}>{run.tests_passed}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Tests Failed</div>
-            <div className="stat-value" style={{ color: totalFailed > 0 ? '#fca5a5' : '#6ee7b7' }}>{totalFailed}</div>
+            <div className="stat-value" style={{ color: run.tests_failed > 0 ? '#fca5a5' : '#6ee7b7' }}>{run.tests_failed}</div>
           </div>
           <div className="stat-card">
-            <div className="stat-label">Fix Passes</div>
-            <div className="stat-value">{run.functions.filter(f => f.fixes.length > 0).length}</div>
+            <div className="stat-label">Avg Coverage</div>
+            <div className="stat-value">{run.avg_coverage_pct != null ? `${Math.round(run.avg_coverage_pct)}%` : '—'}</div>
           </div>
         </div>
+      )}
+
+      <BenchmarkPanel run={run} />
+
+      {showAdminBlock && (
+        <AdminCurationBlock
+          run={run}
+          onPromote={onPromote}
+          promoting={promoting}
+          promoteMsg={promoteMsg}
+        />
       )}
 
       {run.functions.length > 0 && (

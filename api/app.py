@@ -1,15 +1,18 @@
 import os
+import sys
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 from api.db import init_db
 from api.routes import router
-from api.db_routes import router as db_router
-from api.vectordb_routes import router as vectordb_router
-from api.analytics_routes import router as analytics_router
+from api.browser_routes import router as browser_router
 
 
 @asynccontextmanager
@@ -18,14 +21,12 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="GHTest API", lifespan=lifespan)
+app = FastAPI(title="GGPT API", lifespan=lifespan)
 
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 app.include_router(router)
-app.include_router(db_router)
-app.include_router(vectordb_router)
-app.include_router(analytics_router)
+app.include_router(browser_router)
 
 # Serve React build in production
 _dist = os.path.join(os.path.dirname(__file__), "..", "webapp", "dist")
@@ -34,7 +35,7 @@ if os.path.isdir(_dist):
 
 
 def start():
-    """Entrypoint for `ghtest-api` CLI command."""
+    """Entrypoint for `ggpt-api` CLI command."""
     import uvicorn
     uvicorn.run(
         "api.app:app",

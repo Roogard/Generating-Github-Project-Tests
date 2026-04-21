@@ -9,14 +9,6 @@ class RunStatus(StrEnum):
     ERROR   = "error"
 
 
-class FixStatus(StrEnum):
-    PROPOSED = "proposed"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-
-
 class TestType(StrEnum):
     WHITEBOX = "whitebox"
     BLACKBOX = "blackbox"
-
-

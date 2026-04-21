@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { getVectorStats, vectorSearch, getVectorExamples, deleteVectorExample } from '../api.js'
+import { getVectorStats, vectorSearch, getVectorExamples } from '../api.js'
 
-function ExampleCard({ ex, onDelete }) {
+function ExampleCard({ ex }) {
   const [showCode, setShowCode] = useState(false)
   const [showSource, setShowSource] = useState(false)
 
@@ -17,7 +17,6 @@ function ExampleCard({ ex, onDelete }) {
           {ex.coverage_pct != null && <span style={{ fontSize: 12, color: '#6ee7b7' }}>{Math.round(ex.coverage_pct)}% cov</span>}
           <span className="chip chip-pass">✓ {ex.passed}</span>
           {ex.failed > 0 && <span className="chip chip-fail">✗ {ex.failed}</span>}
-          <button className="btn-danger btn-sm" onClick={() => onDelete(ex.id)}>Delete</button>
         </div>
       </div>
 
@@ -80,18 +79,6 @@ export default function VectorDB() {
       setError(e.message)
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleDelete = async (id) => {
-    if (!confirm('Remove this example from ChromaDB?')) return
-    try {
-      await deleteVectorExample(id)
-      loadExamples()
-      getVectorStats().then(setStats).catch(() => {})
-      if (searchResults) setSearchResults(r => r.filter(x => x.id !== id))
-    } catch (e) {
-      setError(e.message)
     }
   }
 
@@ -158,7 +145,7 @@ export default function VectorDB() {
               <p style={{ color: '#64748b' }}>No similar examples found. Run some test generations first to populate the store.</p>
             )}
             {searchResults.map((ex, i) => (
-              <ExampleCard key={i} ex={ex} onDelete={handleDelete} />
+              <ExampleCard key={i} ex={ex} />
             ))}
           </div>
         )}
@@ -182,7 +169,7 @@ export default function VectorDB() {
           </div>
         ) : (
           <>
-            {examples.map((ex, i) => <ExampleCard key={i} ex={ex} onDelete={handleDelete} />)}
+            {examples.map((ex, i) => <ExampleCard key={i} ex={ex} />)}
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: '#64748b', marginTop: 12 }}>
               <button className="btn-ghost btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
               <span>Page {page}</span>

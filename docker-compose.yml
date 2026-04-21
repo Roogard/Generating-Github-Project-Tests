@@ -4,12 +4,12 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ghtest_data:/data
+      - ggpt_data:/data
     env_file:
       - .env
     environment:
-      - DATABASE_URL=sqlite:////data/ghtest.db
+      - DATABASE_URL=sqlite:////data/ggpt.db
       - CHROMA_PATH=/data/chroma_db
 
 volumes:
-  ghtest_data:
+  ggpt_data:

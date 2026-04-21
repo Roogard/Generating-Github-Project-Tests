@@ -17,12 +17,11 @@ COPY --from=frontend-builder /app/webapp/dist ./webapp/dist
 
 COPY api/ ./api/
 COPY src/ ./src/
-COPY main.py ./
 
 RUN mkdir -p /data/chroma_db
 
 ENV CHROMA_PATH=/data/chroma_db
-ENV DATABASE_URL=sqlite:////data/ghtest.db
+ENV DATABASE_URL=sqlite:////data/ggpt.db
 
 EXPOSE 8000
 

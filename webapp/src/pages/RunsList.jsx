@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getRuns, deleteRun } from '../api.js'
+import { isBenchmarkMode } from '../admin.js'
 
 function statusBadge(status) {
   return <span className={`badge badge-${status}`}>{status}</span>
@@ -70,6 +71,8 @@ export default function RunsList() {
                 <th>Status</th>
                 <th>Progress</th>
                 <th>Functions</th>
+                <th>Pass / Fail</th>
+                <th>Outcome</th>
                 <th>Created</th>
                 <th></th>
               </tr>
@@ -82,7 +85,21 @@ export default function RunsList() {
                     {r.repo_url}
                   </td>
                   <td style={{ color: '#94a3b8', fontSize: 12 }}>
-                    {r.function_name || 'whole-project'}
+                    {isBenchmarkMode(r.mode) && (
+                      <span
+                        className="chip"
+                        style={{
+                          marginRight: 6,
+                          background: '#1e293b',
+                          color: '#fbbf24',
+                          borderColor: '#b45309',
+                          fontSize: 10,
+                        }}
+                      >
+                        BENCH
+                      </span>
+                    )}
+                    {r.mode}{r.benchmark_id ? `:${r.benchmark_id}` : ''}
                   </td>
                   <td>{statusBadge(r.status)}</td>
                   <td style={{ width: 140 }}>
@@ -96,6 +113,17 @@ export default function RunsList() {
                     ) : '—'}
                   </td>
                   <td>{r.function_count ?? '—'}</td>
+                  <td style={{ fontSize: 12 }}>
+                    {(r.tests_passed + r.tests_failed) > 0
+                      ? <><span style={{ color: '#6ee7b7' }}>{r.tests_passed}</span> / <span style={{ color: r.tests_failed > 0 ? '#fca5a5' : '#94a3b8' }}>{r.tests_failed}</span></>
+                      : <span style={{ color: '#475569' }}>—</span>}
+                  </td>
+                  <td>
+                    {r.resolved
+                      ? <span className="chip chip-pass">S</span>
+                      : <span style={{ color: '#475569', fontSize: 12 }}>—</span>}
+                    {r.f2p > 0 && <span style={{ fontSize: 11, color: '#64748b', marginLeft: 6 }}>F→P {r.f2p}</span>}
+                  </td>
                   <td style={{ color: '#64748b', fontSize: 12 }}>{timeAgo(r.created_at)}</td>
                   <td onClick={e => e.stopPropagation()}>
                     <button className="btn-danger btn-sm" onClick={e => handleDelete(e, r.id)}>Delete</button>

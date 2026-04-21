@@ -1,45 +1,47 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { createRun } from '../api.js'
+import { createBenchmark } from '../api.js'
 
 const PROVIDERS = ['deepseek', 'openai', 'anthropic', 'ollama']
 const PRESETS = ['fast', 'default', 'thorough']
 
-export default function NewRun() {
+export default function BenchmarkRun() {
   const nav = useNavigate()
   const [form, setForm] = useState({
-    repo_url: '',
-    api_key: '',
     provider: 'deepseek',
     model: '',
     preset: 'default',
-    function_limit: '',
-    install_deps: true,
     use_rag: true,
+    phase: 'measure',
+    seed: 42,
+    populate_count: 30,
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [message, setMessage] = useState('')
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const submit = async e => {
     e.preventDefault()
-    if (!form.repo_url.trim()) return setError('Repository URL is required')
     setError('')
+    setMessage('')
     setLoading(true)
     try {
-      const body = {
-        repo_url: form.repo_url.trim(),
-        api_key: form.api_key.trim(),
+      await createBenchmark({
         provider: form.provider,
         model: form.model.trim() || null,
         preset: form.preset,
-        install_deps: form.install_deps,
         use_rag: form.use_rag,
-        function_limit: form.function_limit ? parseInt(form.function_limit) : null,
-      }
-      const res = await createRun(body)
-      nav(`/runs/${res.id}`)
+        phase: form.phase,
+        seed: parseInt(form.seed) || 42,
+        populate_count: parseInt(form.populate_count) || 30,
+      })
+      setMessage(
+        'Benchmark started in the background. Each QuixBugs program becomes its own ' +
+        'Run — visit the Runs list to watch progress. Results feed into Analytics ' +
+        'automatically.'
+      )
     } catch (e) {
       setError(e.message)
     } finally {
@@ -50,43 +52,46 @@ export default function NewRun() {
   return (
     <div className="page" style={{ maxWidth: 680 }}>
       <div className="page-header">
-        <h1 className="page-title">New Test Generation Run</h1>
+        <h1 className="page-title">QuixBugs Benchmark <span style={{ fontSize: 12, color: '#94a3b8', marginLeft: 8 }}>(admin)</span></h1>
         <button className="btn-ghost" onClick={() => nav('/')}>← Back</button>
       </div>
 
+      <p style={{ color: '#94a3b8', fontSize: 13, marginBottom: 16 }}>
+        Runs the QuixBugs oracle batch. Each program becomes its own Run, with
+        SWT-bench transitions (F→P / F→F / P→F) recorded to the DB and surfaced
+        on the Analytics page.
+      </p>
+
       {error && <div className="alert alert-error">{error}</div>}
+      {message && <div className="alert alert-info" style={{ marginBottom: 16 }}>{message}</div>}
 
       <form onSubmit={submit}>
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 16, fontSize: 15 }}>Repository</h3>
+          <h3 style={{ marginBottom: 16, fontSize: 15 }}>QuixBugs</h3>
           <div className="form-group">
-            <label>GitHub Repository URL *</label>
-            <input
-              type="url"
-              placeholder="https://github.com/owner/repo"
-              value={form.repo_url}
-              onChange={e => set('repo_url', e.target.value)}
-              required
-            />
+            <label>Phase</label>
+            <select value={form.phase} onChange={e => set('phase', e.target.value)}>
+              <option value="measure">Measure — evaluate on measure split</option>
+              <option value="populate">Populate — ingest golden examples into ChromaDB</option>
+            </select>
           </div>
-          <div className="form-group">
-            <label>API Key (passed to LLM provider)</label>
-            <input
-              type="password"
-              placeholder="sk-... or leave blank to use server .env"
-              value={form.api_key}
-              onChange={e => set('api_key', e.target.value)}
-            />
-          </div>
-          <div className="form-group">
-            <label>Function Limit (leave blank for all functions)</label>
-            <input
-              type="number"
-              placeholder="e.g. 10"
-              min="1"
-              value={form.function_limit}
-              onChange={e => set('function_limit', e.target.value)}
-            />
+          <div className="grid-2">
+            <div className="form-group">
+              <label>Populate count</label>
+              <input
+                type="number" min="1" max="40"
+                value={form.populate_count}
+                onChange={e => set('populate_count', e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label>Split seed</label>
+              <input
+                type="number"
+                value={form.seed}
+                onChange={e => set('seed', e.target.value)}
+              />
+            </div>
           </div>
         </div>
 
@@ -120,24 +125,13 @@ export default function NewRun() {
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginBottom: 16, fontSize: 15 }}>Options</h3>
           <div className="toggle-row">
-            <input type="checkbox" id="install_deps" checked={form.install_deps} onChange={e => set('install_deps', e.target.checked)} />
-            <label htmlFor="install_deps" style={{ marginBottom: 0 }}>Install repo dependencies</label>
-          </div>
-          <div className="toggle-row">
             <input type="checkbox" id="use_rag" checked={form.use_rag} onChange={e => set('use_rag', e.target.checked)} />
-            <label htmlFor="use_rag" style={{ marginBottom: 0 }}>
-              Use ChromaDB memory during generation (RAG retrieval)
-            </label>
+            <label htmlFor="use_rag" style={{ marginBottom: 0 }}>Use ChromaDB memory during generation (RAG retrieval)</label>
           </div>
-          <p style={{ fontSize: 12, color: '#64748b', marginTop: 8, marginBottom: 0 }}>
-            Runs and their generated tests are always persisted to SQLite and
-            appear on the Runs page. Promoting into ChromaDB is a separate
-            admin step on the run's detail page.
-          </p>
         </div>
 
         <button type="submit" className="btn-primary" disabled={loading} style={{ width: '100%', padding: '12px' }}>
-          {loading ? 'Starting...' : 'Start Test Generation'}
+          {loading ? 'Starting…' : 'Start Benchmark'}
         </button>
       </form>
     </div>

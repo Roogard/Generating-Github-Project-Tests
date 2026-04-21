@@ -1,5 +1,4 @@
 import io
-import json
 import os
 import zipfile
 from datetime import datetime
@@ -9,9 +8,10 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from api.db import get_db, SessionLocal
-from api.models import Run, Function, GeneratedTest, ProposedFix, TestFailure, FixAttempt
+from api import store
+from api.auth import require_admin_key
 from api.constants import RunStatus
+from api.db import get_db
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
 
@@ -24,12 +24,8 @@ class RunRequest(BaseModel):
     preset: str = "default"
     install_deps: bool = True
     api_key: str = ""
-    fix_pass: bool = False
     function_limit: int | None = None
-    save_to_db: bool = True       # persist full run details to SQLite
-    save_to_rag: bool = True      # ingest generated tests into ChromaDB for future RAG
-    rag_success_only: bool = True # only ingest into RAG if at least one test passed
-    use_rag: bool = True          # retrieve ChromaDB examples during test generation
+    use_rag: bool = True
 
     def effective_model(self) -> str | None:
         if not self.model or not self.model.strip() or self.model.strip().lower() == "string":
@@ -42,160 +38,30 @@ class RunRequest(BaseModel):
         return self.api_key.strip()
 
 
-def _persist_results(
-    db: Session,
-    run_id: int,
-    result: dict,
-    repo_url: str = "",
-    save_to_db: bool = True,
-    save_to_rag: bool = True,
-    rag_success_only: bool = True,
-) -> None:
-    whitebox_code: str = ""
-    blackbox_code: str = ""
-    total_passed = 0
-    total_failed = 0
-    fn_source = result.get("fn_source", "")
-
-    if save_to_db:
-        fn_record = Function(
-            run_id=run_id,
-            name=result["fn_name"],
-            file_path=result["fn_file"],
-            source=fn_source,
-        )
-        db.add(fn_record)
-        db.flush()
-
-        generated_test_by_path: dict[str, GeneratedTest] = {}
-        test_dir = result.get("test_dir", "")
-        if test_dir and os.path.isdir(test_dir):
-            for fname in sorted(os.listdir(test_dir)):
-                if not (fname.startswith("test_") and fname.endswith(".py")):
-                    continue
-                test_type = fname[len("test_"):-len(".py")]
-                fpath = os.path.join(test_dir, fname)
-                with open(fpath, encoding="utf-8") as fh:
-                    code = fh.read()
-                outcome = result.get("test_outcomes", {}).get(fpath, {})
-                cov = result.get("coverage", {}).get(fpath, {})
-                p = len(outcome.get("passed", []))
-                f = len(outcome.get("failed", []))
-                total_passed += p
-                total_failed += f
-                gt = GeneratedTest(
-                    function_id=fn_record.id,
-                    test_type=test_type,
-                    code=code,
-                    passed=p,
-                    failed=f,
-                    coverage_pct=cov.get("coverage_pct"),
-                )
-                db.add(gt)
-                db.flush()
-                generated_test_by_path[fpath] = gt
-                if test_type == "whitebox":
-                    whitebox_code = code
-                elif test_type == "blackbox":
-                    blackbox_code = code
-
-        for failure in result.get("failures", []):
-            path = failure.get("test_file_path") or failure.get("path", "")
-            gt = generated_test_by_path.get(path)
-            if gt is None:
-                continue
-            db.add(TestFailure(
-                generated_test_id=gt.id,
-                test_name=failure.get("name", ""),
-                kind=failure.get("kind", "failure"),
-                longrepr=failure.get("longrepr", ""),
-                assertion=failure.get("assertion", ""),
-                expected=failure.get("expected", ""),
-                actual=failure.get("actual", ""),
-            ))
-
-        for attempt in result.get("repair_attempts", []):
-            db.add(FixAttempt(
-                function_id=fn_record.id,
-                attempt_number=attempt["attempt_number"],
-                attempt_type=attempt["attempt_type"],
-                failures_before=attempt["failures_before"],
-                failures_after=attempt["failures_after"],
-                converged=attempt["converged"],
-            ))
-
-        fix_attempt = result.get("fix_attempt")
-        if fix_attempt:
-            db.add(FixAttempt(
-                function_id=fn_record.id,
-                attempt_number=len(result.get("repair_attempts", [])) + 1,
-                attempt_type="fix_agent",
-                diagnosis=fix_attempt.get("diagnosis"),
-                failures_before=fix_attempt.get("failures_before", 0),
-                failures_after=fix_attempt.get("failures_after", 0),
-                converged=fix_attempt.get("converged", False),
-            ))
-
-        fixed_code = result.get("fixed_code", "")
-        if fixed_code:
-            db.add(ProposedFix(
-                function_id=fn_record.id,
-                fixed_code=fixed_code,
-                diagnosis=result.get("diagnosis"),
-            ))
-    else:
-        # Compute totals for RAG gating without DB writes
-        test_dir = result.get("test_dir", "")
-        if test_dir and os.path.isdir(test_dir):
-            for fname in sorted(os.listdir(test_dir)):
-                if not (fname.startswith("test_") and fname.endswith(".py")):
-                    continue
-                test_type = fname[len("test_"):-len(".py")]
-                fpath = os.path.join(test_dir, fname)
-                with open(fpath, encoding="utf-8") as fh:
-                    code = fh.read()
-                outcome = result.get("test_outcomes", {}).get(fpath, {})
-                total_passed += len(outcome.get("passed", []))
-                total_failed += len(outcome.get("failed", []))
-                if test_type == "whitebox":
-                    whitebox_code = code
-                elif test_type == "blackbox":
-                    blackbox_code = code
-
-    rag_eligible = save_to_rag and fn_source and (whitebox_code or blackbox_code)
-    if rag_success_only:
-        rag_eligible = rag_eligible and total_passed > 0
-    if rag_eligible:
-        try:
-            from src.vectordb import ingest_example
-            agg_cov = None
-            cov_vals = [v["coverage_pct"] for v in result.get("coverage", {}).values() if v.get("coverage_pct") is not None]
-            if cov_vals:
-                agg_cov = sum(cov_vals) / len(cov_vals)
-            ingest_example(
-                fn={"name": result["fn_name"], "source": fn_source, "file_path": result.get("fn_file", "")},
-                repo_url=repo_url,
-                whitebox_code=whitebox_code,
-                blackbox_code=blackbox_code,
-                passed=total_passed,
-                failed=total_failed,
-                coverage_pct=agg_cov,
-            )
-        except Exception:
-            pass
+class BenchmarkRequest(BaseModel):
+    provider: str = "deepseek"
+    model: str | None = None
+    preset: str = "default"
+    use_rag: bool = True
+    phase: str = "measure"             # populate | measure
+    seed: int = 42
+    populate_count: int = 30
 
 
-# ── Background task ───────────────────────────────────────────────────────────
+class PromoteRequest(BaseModel):
+    min_pass_rate: float = 0.0
+    min_passed: int = 0
+    min_coverage: float | None = None
+
+
+# ── Background tasks ──────────────────────────────────────────────────────────
 
 def _execute_pipeline(run_id: int, body: RunRequest):
-    db = SessionLocal()
     try:
-        run = db.get(Run, run_id)
-        run.status = RunStatus.RUNNING
-        db.commit()
+        with store.session_scope() as db:
+            store.update_run(db, run_id, status=RunStatus.RUNNING)
 
         if body.function_name:
-            # Single-function mode
             from src.pipeline import run_pipeline
             result = run_pipeline(
                 repo_url=body.repo_url,
@@ -205,30 +71,30 @@ def _execute_pipeline(run_id: int, body: RunRequest):
                 preset=body.preset,
                 install_deps=body.install_deps,
                 api_key=body.effective_api_key(),
-                fix_pass=body.fix_pass,
                 use_rag=body.use_rag,
             )
-            run.output_dir = result["output_dir"]
-            if result["status"] == "error":
-                run.status = RunStatus.ERROR
-                run.error_message = result["error"]
-            else:
-                run.status = RunStatus.DONE
-                _persist_results(
-                    db, run_id, result,
-                    repo_url=run.repo_url,
-                    save_to_db=body.save_to_db,
-                    save_to_rag=body.save_to_rag,
-                    rag_success_only=body.rag_success_only,
-                )
+            with store.session_scope() as db:
+                if result["status"] == "error":
+                    store.update_run(db, run_id,
+                        status=RunStatus.ERROR,
+                        output_dir=result["output_dir"],
+                        error_message=result["error"],
+                        finished_at=datetime.utcnow(),
+                    )
+                else:
+                    store.update_run(db, run_id,
+                        status=RunStatus.DONE,
+                        output_dir=result["output_dir"],
+                        finished_at=datetime.utcnow(),
+                    )
+                    store.save_function_result(db, run_id, result)
+                    store.finalize_run(db, run_id)
         else:
-            # Whole-project mode
             from src.pipeline import run_project_for_api
 
             def progress_cb(current: int, total: int):
-                run.progress_current = current
-                run.progress_total = total
-                db.commit()
+                with store.session_scope() as db:
+                    store.update_run(db, run_id, progress_current=current, progress_total=total)
 
             result = run_project_for_api(
                 repo_url=body.repo_url,
@@ -237,93 +103,128 @@ def _execute_pipeline(run_id: int, body: RunRequest):
                 preset=body.preset,
                 install_deps=body.install_deps,
                 api_key=body.effective_api_key(),
-                fix_pass=body.fix_pass,
                 limit=body.function_limit,
                 progress_callback=progress_cb,
                 use_rag=body.use_rag,
             )
-            run.output_dir = result["output_dir"]
-            if result["status"] == "error":
-                run.status = RunStatus.ERROR
-                run.error_message = result["error"]
-            else:
-                run.status = RunStatus.DONE
-                for fn_result in result.get("results", []):
-                    if fn_result["status"] == "done":
-                        _persist_results(
-                            db, run_id, fn_result,
-                            repo_url=run.repo_url,
-                            save_to_db=body.save_to_db,
-                            save_to_rag=body.save_to_rag,
-                            rag_success_only=body.rag_success_only,
-                        )
-
-        run.finished_at = datetime.utcnow()
-        db.commit()
+            with store.session_scope() as db:
+                if result["status"] == "error":
+                    store.update_run(db, run_id,
+                        status=RunStatus.ERROR,
+                        output_dir=result["output_dir"],
+                        error_message=result["error"],
+                        finished_at=datetime.utcnow(),
+                    )
+                else:
+                    store.update_run(db, run_id,
+                        status=RunStatus.DONE,
+                        output_dir=result["output_dir"],
+                        finished_at=datetime.utcnow(),
+                    )
+                    for fn_result in result.get("results", []):
+                        if fn_result["status"] == "done":
+                            store.save_function_result(db, run_id, fn_result)
+                    store.finalize_run(db, run_id)
 
     except Exception as e:
         try:
-            run = db.get(Run, run_id)
-            run.status = RunStatus.ERROR
-            run.error_message = str(e)
-            run.finished_at = datetime.utcnow()
-            db.commit()
+            with store.session_scope() as db:
+                store.update_run(db, run_id,
+                    status=RunStatus.ERROR,
+                    error_message=str(e),
+                    finished_at=datetime.utcnow(),
+                )
         except Exception:
             pass
-    finally:
-        db.close()
+
+
+def _execute_benchmark(body: BenchmarkRequest):
+    """Admin-only: kick off QuixBugs batch.
+
+    Each program becomes its own Run row (via `src.benchmarks._persist_benchmark_run`).
+    """
+    try:
+        from src.llm import build_config
+        from src import benchmarks
+
+        benchmarks.run_quixbugs(
+            phase=body.phase,
+            cfg=build_config(body.provider, body.model),
+            preset=body.preset,
+            seed=body.seed,
+            populate_count=body.populate_count,
+            use_rag=body.use_rag,
+        )
+    except Exception as e:
+        print(f"[benchmark] failed: {type(e).__name__}: {e}")
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/", status_code=201)
 def create_run(body: RunRequest, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    run = Run(
+    run = store.create_run(db,
         repo_url=body.repo_url,
         function_name=body.function_name,
-        config_json=json.dumps({
-            "provider": body.provider,
-            "preset": body.preset,
-            "fix_pass": body.fix_pass,
-            "function_limit": body.function_limit,
-            "use_rag": body.use_rag,
-            "save_to_rag": body.save_to_rag,
-        }),
+        mode="single" if body.function_name else "project",
+        provider=body.provider,
+        model=body.effective_model(),
+        preset=body.preset,
+        use_rag=body.use_rag,
         status=RunStatus.PENDING,
-        progress_current=0,
-        progress_total=0,
     )
-    db.add(run)
     db.commit()
     db.refresh(run)
     background_tasks.add_task(_execute_pipeline, run.id, body)
     return {"id": run.id, "status": run.status}
 
 
+@router.post("/benchmark", status_code=202, dependencies=[Depends(require_admin_key)])
+def create_benchmark(body: BenchmarkRequest, background_tasks: BackgroundTasks):
+    if body.phase not in ("populate", "measure"):
+        raise HTTPException(status_code=400, detail=f"Unknown phase: {body.phase}")
+    background_tasks.add_task(_execute_benchmark, body)
+    return {"started": True, "phase": body.phase}
+
+
+def _run_summary(r) -> dict:
+    return {
+        "id": r.id,
+        "repo_url": r.repo_url,
+        "function_name": r.function_name,
+        "mode": r.mode,
+        "benchmark_id": r.benchmark_id,
+        "status": r.status,
+        "progress_current": r.progress_current,
+        "progress_total": r.progress_total,
+        "created_at": r.created_at,
+        "finished_at": r.finished_at,
+        "promoted_to_memory_at": r.promoted_to_memory_at,
+        "function_count": len(r.functions),
+        "tests_passed": r.tests_passed,
+        "tests_failed": r.tests_failed,
+        "tests_run": r.tests_run,
+        "avg_coverage_pct": r.avg_coverage_pct,
+        "use_rag": r.use_rag,
+        "provider": r.provider,
+        "f2p": r.f2p,
+        "f2f": r.f2f,
+        "p2f": r.p2f,
+        "p2p": r.p2p,
+        "detected": r.detected,
+        "resolved": r.resolved,
+        "golden": r.golden,
+    }
+
+
 @router.get("/")
 def list_runs(status: str | None = None, db: Session = Depends(get_db)):
-    q = db.query(Run)
-    if status:
-        q = q.filter(Run.status == status)
-    return [
-        {
-            "id": r.id,
-            "repo_url": r.repo_url,
-            "function_name": r.function_name,
-            "status": r.status,
-            "progress_current": r.progress_current,
-            "progress_total": r.progress_total,
-            "created_at": r.created_at,
-            "finished_at": r.finished_at,
-            "function_count": len(r.functions),
-        }
-        for r in q.order_by(Run.created_at.desc()).all()
-    ]
+    return [_run_summary(r) for r in store.list_runs(db, status=status)]
 
 
 @router.get("/{run_id}/status")
 def get_run_status(run_id: int, db: Session = Depends(get_db)):
-    run = db.get(Run, run_id)
+    run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return {
@@ -337,7 +238,7 @@ def get_run_status(run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{run_id}/download")
 def download_run(run_id: int, db: Session = Depends(get_db)):
-    run = db.get(Run, run_id)
+    run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     if not run.output_dir or not os.path.isdir(run.output_dir):
@@ -362,64 +263,89 @@ def download_run(run_id: int, db: Session = Depends(get_db)):
 
 @router.get("/{run_id}")
 def get_run(run_id: int, db: Session = Depends(get_db)):
-    run = db.get(Run, run_id)
+    run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return {
-        "id": run.id,
-        "repo_url": run.repo_url,
-        "function_name": run.function_name,
-        "status": run.status,
-        "config": json.loads(run.config_json) if run.config_json else {},
+        **_run_summary(run),
+        "model": run.model,
+        "preset": run.preset,
         "output_dir": run.output_dir,
         "error_message": run.error_message,
-        "progress_current": run.progress_current,
-        "progress_total": run.progress_total,
-        "created_at": run.created_at,
-        "finished_at": run.finished_at,
+        "elapsed_seconds": run.elapsed_seconds,
+        "patch_applied": run.patch_applied,
         "functions": [
             {
                 "id": fn.id,
                 "name": fn.name,
                 "file_path": fn.file_path,
                 "source": fn.source,
-                "tests": [
-                    {
-                        "id": t.id,
-                        "type": t.test_type,
-                        "passed": t.passed,
-                        "failed": t.failed,
-                        "coverage_pct": t.coverage_pct,
-                        "code": t.code,
-                    }
-                    for t in fn.generated_tests
-                ],
-                "fixes": [
-                    {"id": fx.id, "status": fx.status, "diagnosis": fx.diagnosis, "fixed_code": fx.fixed_code}
-                    for fx in fn.proposed_fixes
-                ],
-                "failures": [
-                    {
-                        "test_name": f.test_name,
-                        "kind": f.kind,
-                        "longrepr": f.longrepr,
-                        "assertion": f.assertion,
-                        "expected": f.expected,
-                        "actual": f.actual,
-                    }
-                    for t in fn.generated_tests
-                    for f in t.test_failures
-                ],
+                "tests_passed": fn.tests_passed,
+                "tests_failed": fn.tests_failed,
+                "coverage_pct": fn.coverage_pct,
+                "whitebox_code": fn.whitebox_code,
+                "blackbox_code": fn.blackbox_code,
             }
             for fn in run.functions
         ],
     }
 
 
-@router.delete("/{run_id}", status_code=204)
-def delete_run(run_id: int, db: Session = Depends(get_db)):
-    run = db.get(Run, run_id)
+@router.post(
+    "/{run_id}/promote-to-memory",
+    dependencies=[Depends(require_admin_key)],
+)
+def promote_run_to_memory(
+    run_id: int,
+    body: PromoteRequest | None = None,
+    db: Session = Depends(get_db),
+):
+    run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
-    db.delete(run)
+    if run.promoted_to_memory_at is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Run already promoted at {run.promoted_to_memory_at.isoformat()}",
+        )
+
+    from src.vectordb import ingest_example
+    floor = body or PromoteRequest()
+    ingested = 0
+    skipped: dict[str, int] = {}
+
+    for fn in run.functions:
+        passed, failed, coverage, reason = store.score_function(
+            fn,
+            min_passed=floor.min_passed,
+            min_pass_rate=floor.min_pass_rate,
+            min_coverage=floor.min_coverage,
+        )
+        if reason:
+            skipped[reason] = skipped.get(reason, 0) + 1
+            continue
+        ingest_example(
+            fn={"name": fn.name, "source": fn.source, "file_path": fn.file_path or ""},
+            repo_url=run.repo_url,
+            whitebox_code=fn.whitebox_code or "",
+            blackbox_code=fn.blackbox_code or "",
+            passed=passed,
+            failed=failed,
+            coverage_pct=coverage,
+        )
+        ingested += 1
+
+    run.promoted_to_memory_at = datetime.utcnow()
+    db.commit()
+    return {
+        "ingested": ingested,
+        "skipped": skipped,
+        "promoted_at": run.promoted_to_memory_at,
+    }
+
+
+@router.delete("/{run_id}", status_code=204)
+def delete_run(run_id: int, db: Session = Depends(get_db)):
+    if not store.delete_run(db, run_id):
+        raise HTTPException(status_code=404, detail="Run not found")
     db.commit()

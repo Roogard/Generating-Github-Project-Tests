@@ -110,7 +110,7 @@ def get_issue_description(repo_path: str, github_url: str, max_chars: int = 3000
         slug = m.group(1).rstrip("/").removesuffix(".git")
         issue_num = numbers[0]
         url = f"https://api.github.com/repos/{slug}/issues/{issue_num}"
-        headers = {"Accept": "application/vnd.github+json", "User-Agent": "ghtest/1.0"}
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": "ggpt/1.0"}
         token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
         if token:
             headers["Authorization"] = f"token {token}"
@@ -215,45 +215,3 @@ def _get_imports(source_bytes, language):
     return "\n".join(lines)
 
 
-def replace_function_in_repo(fn: dict, fixed_code: str, repo_dir: str) -> int:
-    """Replace a function's source in the repo with fixed_code, re-indented to match the original.
-
-    Returns the new end_line (1-based, exclusive) after replacement.
-    """
-    file_path = os.path.join(repo_dir, fn["file_path"])
-    with open(file_path, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    start = fn["start_line"] - 1
-    end = fn["end_line"]
-
-    # Detect original indentation from the first line of the function
-    indent_str = ""
-    if start < len(lines):
-        original_first = lines[start]
-        indent = len(original_first) - len(original_first.lstrip())
-        indent_str = original_first[:indent]
-
-    # Re-indent the fixed code to match the original
-    fixed_lines = fixed_code.splitlines(True)
-    if fixed_lines:
-        first_fixed = fixed_lines[0]
-        fixed_indent = len(first_fixed) - len(first_fixed.lstrip())
-        reindented = []
-        for line in fixed_lines:
-            if line.strip() == "":
-                reindented.append("\n")
-            else:
-                stripped = line[min(fixed_indent, len(line) - len(line.lstrip())):]
-                reindented.append(indent_str + stripped)
-        fixed_lines = reindented
-
-    # Ensure last line ends with newline
-    if fixed_lines and not fixed_lines[-1].endswith("\n"):
-        fixed_lines[-1] += "\n"
-
-    new_lines = lines[:start] + fixed_lines + lines[end:]
-    with open(file_path, "w", encoding="utf-8") as f:
-        f.writelines(new_lines)
-
-    return start + len(fixed_lines)

@@ -41,40 +41,40 @@ def ingest_example(
 
     Uses the function source as the embedding anchor so future queries
     against a new function's source retrieve structurally similar examples.
-    Silent no-op on any exception so the pipeline is never blocked.
     """
-    try:
-        source = fn.get("source", "")
-        if not source or not source.strip():
-            return
-        collection = get_collection()
-        source_hash = hashlib.sha256(source.encode()).hexdigest()[:16]
-        fn_name = fn.get("name", "unknown")
-        fn_file = fn.get("file_path", "")
-        base_meta = {
-            "fn_name": fn_name,
-            "fn_file": fn_file,
-            "fn_source": source,
-            "repo_url": repo_url,
-            "passed": passed,
-            "failed": failed,
-            "coverage_pct": coverage_pct if coverage_pct is not None else -1.0,
-        }
-        records = [
-            ("whitebox", whitebox_code),
-            ("blackbox", blackbox_code),
-        ]
-        ids, documents, metadatas = [], [], []
-        for test_type, test_code in records:
-            if not test_code or not test_code.strip():
-                continue
-            ids.append(f"fn_{source_hash}_{test_type}")
-            documents.append(source)
-            metadatas.append({**base_meta, "test_type": test_type, "test_code": test_code})
-        if ids:
-            collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
-    except Exception:
-        pass
+    source = fn.get("source", "")
+    if not source or not source.strip():
+        print(f"[rag] skip ingest: empty source for fn={fn.get('name')!r}")
+        return
+    collection = get_collection()
+    source_hash = hashlib.sha256(source.encode()).hexdigest()[:16]
+    fn_name = fn.get("name", "unknown")
+    fn_file = fn.get("file_path", "")
+    base_meta = {
+        "fn_name": fn_name,
+        "fn_file": fn_file,
+        "fn_source": source,
+        "repo_url": repo_url,
+        "passed": passed,
+        "failed": failed,
+        "coverage_pct": coverage_pct if coverage_pct is not None else -1.0,
+    }
+    records = [
+        ("whitebox", whitebox_code),
+        ("blackbox", blackbox_code),
+    ]
+    ids, documents, metadatas = [], [], []
+    for test_type, test_code in records:
+        if not test_code or not test_code.strip():
+            continue
+        ids.append(f"fn_{source_hash}_{test_type}")
+        documents.append(source)
+        metadatas.append({**base_meta, "test_type": test_type, "test_code": test_code})
+    if not ids:
+        print(f"[rag] skip ingest: no test code for fn={fn_name!r}")
+        return
+    collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+    print(f"[rag] ingested {len(ids)} example(s) for fn={fn_name!r} (count={collection.count()})")
 
 
 def retrieve_examples(

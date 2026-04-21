@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: ghtest
+    name: ggpt
     runtime: docker
     plan: free
     healthCheckPath: /api/runs/
     envVars:
       - key: DATABASE_URL
-        value: sqlite:///./ghtest.db
+        value: sqlite:///./ggpt.db
       - key: CHROMA_PATH
         value: ./chroma_db

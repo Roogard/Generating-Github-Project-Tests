@@ -40,7 +40,10 @@ data/dataset.json
 
 # Runtime data
 *.db
+!ggpt.db
 chroma_db/
+!chroma_db/
+!chroma_db/**
 eval_output/
 output/
 

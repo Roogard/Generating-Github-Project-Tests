@@ -6,18 +6,21 @@ import sys
 import tempfile
 
 
-def run_tests(test_file, repo_dir, timeout=60, per_test_timeout=None):
+def run_tests(test_file, repo_dir, timeout=60, per_test_timeout=None, python_bin=None):
     """Run pytest on test_file and return structured results.
 
     per_test_timeout: if set, passes --timeout=N to pytest-timeout to kill
     individual hanging tests after N seconds (requires pytest-timeout installed).
+    python_bin: optional path to a Python interpreter (e.g. an ephemeral uv venv)
+    whose site-packages should be used. Defaults to sys.executable.
     """
+    py = python_bin or sys.executable
     report_file = tempfile.mktemp(suffix=".json")
     env = os.environ.copy()
     env["PYTHONPATH"] = repo_dir + os.pathsep + env.get("PYTHONPATH", "")
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", test_file,
+            [py, "-m", "pytest", test_file,
              "--json-report", f"--json-report-file={report_file}",
              *([f"--timeout={per_test_timeout}"] if per_test_timeout else []),
              "-q", "--tb=short", "--no-header"],
@@ -64,12 +67,13 @@ def run_tests(test_file, repo_dir, timeout=60, per_test_timeout=None):
     }
 
 
-def measure_coverage(test_file, fn, repo_dir, timeout=60):
+def measure_coverage(test_file, fn, repo_dir, timeout=60, python_bin=None):
     """Run coverage.py on test_file and return coverage info for fn's line range.
 
     Returns dict with: covered_lines, uncovered_lines, coverage_pct, fn_start_line,
     fn_end_line, fn_source_lines (uncovered line -> source text), error.
     """
+    py = python_bin or sys.executable
     fn_abs = os.path.normpath(os.path.join(repo_dir, fn["file_path"]))
     data_file = tempfile.mktemp(suffix=".coverage")
     json_file = tempfile.mktemp(suffix=".json")
@@ -77,13 +81,13 @@ def measure_coverage(test_file, fn, repo_dir, timeout=60):
     env["PYTHONPATH"] = repo_dir + os.pathsep + env.get("PYTHONPATH", "")
     try:
         subprocess.run(
-            [sys.executable, "-m", "coverage", "run",
+            [py, "-m", "coverage", "run",
              f"--data-file={data_file}", f"--include={fn_abs}", "--branch",
              "-m", "pytest", test_file, "-q", "--no-header", "--tb=no"],
             capture_output=True, text=True, env=env, timeout=timeout,
         )
         result = subprocess.run(
-            [sys.executable, "-m", "coverage", "json", f"--data-file={data_file}", "-o", json_file],
+            [py, "-m", "coverage", "json", f"--data-file={data_file}", "-o", json_file],
             capture_output=True, text=True, env=env, timeout=30,
         )
         if result.returncode != 0 or not os.path.exists(json_file):

@@ -1,11 +1,26 @@
-"""ChromaDB vector database management endpoints."""
-from fastapi import APIRouter, HTTPException
+"""Read-only browse endpoints — vector DB browser + analytics summary.
 
-router = APIRouter(prefix="/api/vectordb", tags=["vectordb"])
+  /api/vectordb/*   — read-only ChromaDB browser (Vector DB page)
+  /api/analytics/*  — benchmark-interpreter dashboard (Analytics page)
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from api import store
+from api.db import get_db
+
+router = APIRouter()
 
 
-@router.get("/stats")
-def get_stats():
+# ═════════════════════════════════════════════════════════════════════════════
+#   Read-only Vector DB browser   (/api/vectordb/*)
+# ═════════════════════════════════════════════════════════════════════════════
+
+vector_router = APIRouter(prefix="/api/vectordb", tags=["vectordb"])
+
+
+@vector_router.get("/stats")
+def vector_stats():
     try:
         from src.vectordb import get_collection
         col = get_collection()
@@ -14,8 +29,8 @@ def get_stats():
         return {"count": 0, "collection_name": "generated_tests", "error": str(e)}
 
 
-@router.post("/search")
-def search(body: dict):
+@vector_router.post("/search")
+def vector_search(body: dict):
     query = (body.get("query") or "").strip()
     test_type = body.get("test_type", "whitebox")
     n = min(int(body.get("n", 3)), 20)
@@ -23,13 +38,12 @@ def search(body: dict):
         raise HTTPException(status_code=400, detail="query is required")
     try:
         from src.vectordb import retrieve_examples
-        results = retrieve_examples(query, test_type, n_results=n)
-        return {"results": results}
+        return {"results": retrieve_examples(query, test_type, n_results=n)}
     except Exception as e:
         return {"results": [], "error": str(e)}
 
 
-@router.get("/examples")
+@vector_router.get("/examples")
 def list_examples(page: int = 1, limit: int = 20, test_type: str = ""):
     try:
         from src.vectordb import get_collection
@@ -67,11 +81,17 @@ def list_examples(page: int = 1, limit: int = 20, test_type: str = ""):
         return {"total": 0, "page": page, "limit": limit, "examples": [], "error": str(e)}
 
 
-@router.delete("/examples/{example_id}", status_code=204)
-def delete_example(example_id: str):
-    try:
-        from src.vectordb import get_collection
-        col = get_collection()
-        col.delete(ids=[example_id])
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+# ═════════════════════════════════════════════════════════════════════════════
+#   Analytics summary   (/api/analytics/*)
+# ═════════════════════════════════════════════════════════════════════════════
+
+analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+
+@analytics_router.get("/summary")
+def get_summary(db: Session = Depends(get_db)):
+    return store.summary_stats(db)
+
+
+router.include_router(vector_router)
+router.include_router(analytics_router)

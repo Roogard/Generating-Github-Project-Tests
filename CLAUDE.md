@@ -1,4 +1,4 @@
-# GHTest
+# GGPT (Generating Github Project Tests)
 
 Automated test generation for Python GitHub repositories using LLMs.
 Generated tests that fail on the buggy codebase and pass after applying the ground-truth fix indicate a detected bug — this is the SWT-bench evaluation paradigm.
@@ -7,90 +7,84 @@ Generated tests that fail on the buggy codebase and pass after applying the grou
 
 ## What it does
 
-1. Clones a repo (or a specific buggy commit from BugsInPy)
+1. Clones a repo (or a buggy/fixed pair from QuixBugs for benchmark mode)
 2. Extracts target Python functions via tree-sitter AST parsing
 3. Generates whitebox + blackbox tests concurrently via an LLM
-4. Runs tests with pytest and reports failures
-5. In batch mode: applies the ground-truth fix patch and measures SWT-bench transitions (F→P, F→F, P→F, P→P)
+4. Runs tests with pytest and reports failures + coverage
+5. In benchmark mode: applies the ground-truth fix patch and measures SWT-bench transitions (F→P, F→F, P→F, P→P)
 
 ---
 
 ## File structure
 
 ```
-main.py            CLI entry point — single-function mode + BugsInPy batch mode
-pipeline.py        Core orchestration: generate → write → run → parse failures
-llm.py             LLM provider config + concurrent test generation (LangChain)
-repo_utils.py      Git clone (HEAD or specific commit), tree-sitter function extraction
-test_runner.py     pytest runner (JSON report) + coverage measurement (unused, available)
-constraints.txt    Pinned versions for test runner + HTTP stack (pip --constraint)
-
-src/prompts/
-  whitebox.md      System prompt for structural/whitebox tests
-  blackbox.md      System prompt for behavioural/blackbox tests
+src/
+  pipeline.py      Core orchestration: generate → write → run → parse failures → measure coverage
+  llm.py           LLM provider config + concurrent test generation (LangChain)
+  repo_utils.py    Git clone (HEAD or specific commit), tree-sitter function extraction
+  test_runner.py   pytest runner (JSON report) + per-file coverage measurement
+  vectordb.py      ChromaDB wrapper — RAG few-shot retrieval for test generation
+  benchmarks.py    QuixBugs batch driver, invoked by the API
+  prompts/
+    whitebox.md    System prompt for structural/whitebox tests
+    blackbox.md    System prompt for behavioural/blackbox tests
 
 api/
-  app.py           FastAPI app + CORS + lifespan (init_db)
+  app.py           FastAPI app + CORS + lifespan (init_db) + SPA mount
   db.py            SQLite via SQLAlchemy — session factory + Base
-  models.py        ORM: Run, Function, GeneratedTest, ProposedFix, BenchmarkRun
-  routes.py        REST: POST/GET/DELETE /api/runs, background pipeline execution
-  benchmarks.py    REST: POST /api/benchmarks/import, GET /api/benchmarks/stats
-  constants.py     StrEnum constants: RunStatus, FixStatus, TestType
+  models.py        ORM: Run, Function (cascade delete)
+  routes.py        REST: /api/runs/* + /api/runs/benchmark (admin)
+  browser_routes.py REST: /api/vectordb/*, /api/analytics/summary
+  store.py         Thin DAL + benchmark-interpreter summary_stats
+  auth.py          Admin passcode gate (X-Admin-Key header)
+  constants.py     StrEnum constants: RunStatus, TestType
+
+webapp/            React + Vite dashboard — the only user-facing entry point
+  src/pages/       RunsList, NewRun, RunDetail, BenchmarkRun (admin),
+                   VectorDB, Analytics
 ```
 
 ---
 
 ## Running it
 
-**Whole project (primary deliverable):**
-```
-python main.py --project <repo_url_or_local_path> [--spec spec.md] [--provider deepseek|anthropic|openai|ollama] [--preset fast|default|thorough]
-```
-Recursively generates `test_<fn>_whitebox.py` + `test_<fn>_blackbox.py` for every function, plus a `conftest.py` and `run_tests.yml` (GitHub Actions).
+The web dashboard is the only entry point — there is no CLI.
 
-**Single function:**
-```
-python main.py <repo_url> <function_name> [--provider deepseek|anthropic|openai|ollama] [--preset fast|default|thorough]
-```
-
-**BugsInPy batch (SWT-bench evaluation):**
-```
-python main.py --batch
-# configure BUGSINPY_PROJECTS and BUGS_PER_PROJECT in main.py
-```
-
-**Re-analyze an existing results.json:**
-```
-python main.py --analyze eval_output/bugsinpy_<timestamp>/results.json
-```
-
-**API server:**
+**Dev (two terminals):**
 ```
 uvicorn api.app:app --reload
-# or: ghtest-api  (via pyproject.toml script)
+cd webapp && npm install && npm run dev
 ```
+Open http://localhost:5173.
+
+**Production bundle (one terminal):**
+```
+cd webapp && npm run build
+cd .. && uvicorn api.app:app
+```
+FastAPI auto-mounts `webapp/dist/` at `/`. Also available via `ggpt-api` console script or `docker compose up --build`.
+
+**Benchmarks:** the `/runs/benchmark` page (admin-gated) kicks off a QuixBugs batch. Each program becomes its own Run in the DB; the Analytics page aggregates the SWT metrics and compares base vs RAG.
 
 ---
 
-## SWT-bench metrics (results.json schema)
+## SWT-bench metrics (per Run row in DB)
 
 | Field | Meaning |
 |-------|---------|
-| `tests_run` | Total tests executed on buggy code |
 | `tests_passed` | Tests passing on buggy code (not detecting bug) |
 | `tests_failed` | Tests failing on buggy code (potential detections) |
-| `tests_errored` | Collection / import errors |
 | `patch_applied` | W — ground-truth patch applied cleanly |
 | `f2p` | F→P — fail on buggy, pass on fixed (true positives) |
 | `f2f` | F→F — fail on both (spurious / false positives) |
 | `p2f` | P→F — pass on buggy, fail on fixed (regressions introduced) |
 | `p2p` | P→P — pass on both (stable neutral tests) |
-| `detected` | `tests_failed > 0` |
+| `detected` | `f2p > 0` — at least one test transitions fail→pass under the oracle |
 | `resolved` | S — `f2p > 0 AND f2f == 0 AND p2f == 0` (primary SWT-bench metric) |
 
 ---
 
-## Current benchmark performance (BugsInPy, 9 bugs, DeepSeek)
+## Historical benchmark performance (BugsInPy, 9 bugs, DeepSeek — prior evaluation)
 
 | Metric | Result |
 |--------|--------|
@@ -107,6 +101,6 @@ uvicorn api.app:app --reload
 
 ## Guiding constraints
 
-- Do not break the existing `main.py` → `pipeline.py` → `llm.py` / `repo_utils.py` / `test_runner.py` call chain
-- Keep each module single-purpose; extend rather than rewrite
-- `test_runner.py` has `measure_coverage()` implemented but not yet wired into the pipeline — available for future use
+- All runs go through the webapp → API → DB. Do not add CLI entry points.
+- Keep each module single-purpose; extend rather than rewrite.
+- `src/pipeline.py` calls `test_runner.measure_coverage()` per generated test file — coverage is a wired feature, not a spare.

@@ -435,7 +435,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ghtest"
+name = "ggpt"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
