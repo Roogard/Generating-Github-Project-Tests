@@ -75,6 +75,7 @@ export default function VectorDB() {
     try {
       const r = await vectorSearch(searchQuery.trim(), searchType, searchN)
       setSearchResults(r.results)
+      if (r.error) setError(r.error)
     } catch (e) {
       setError(e.message)
     } finally {

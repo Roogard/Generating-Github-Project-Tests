@@ -70,9 +70,10 @@ def delete_run(db: Session, run_id: int) -> bool:
     return True
 
 
-# ── persistence of one pipeline result ─────────────────────────────────────
+
 
 def save_function_result(db: Session, run_id: int, result: dict) -> Function:
+    #gets whitebox and blackbox from pipeline, as well as if tests passed/failed
     test_dir = result.get("test_dir", "")
     wb_path = os.path.join(test_dir, "test_whitebox.py")
     bb_path = os.path.join(test_dir, "test_blackbox.py")
@@ -85,11 +86,13 @@ def save_function_result(db: Session, run_id: int, result: dict) -> Function:
     bb_pass = len(outcomes.get(bb_path, {}).get("passed", []))
     bb_fail = len(outcomes.get(bb_path, {}).get("failed", []))
 
+    #puts all info into function table
     fn = Function(
         run_id=run_id, name=result["fn_name"], file_path=result.get("fn_file", ""),
         source=result.get("fn_source", ""), whitebox_code=wb_code, blackbox_code=bb_code,
         tests_passed=wb_pass + bb_pass, tests_failed=wb_fail + bb_fail,
     )
+    #adds function to database
     db.add(fn)
     db.flush()
     return fn

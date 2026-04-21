@@ -334,7 +334,7 @@ def _setup_run_env(repo_dir: str) -> tuple[str | None, str | None]:
     return py, venv_dir
 
 
-# ── DB persistence ────────────────────────────────────────────────────────────
+#called at end of pipeline run, takes results and saves them in database
 
 def _add_to_db(run_id: int, result: dict) -> None:
     from api.store import session_scope, update_run, save_function_result, finalize_run
@@ -352,7 +352,7 @@ def _add_to_db(run_id: int, result: dict) -> None:
         finalize_run(db, run_id)
 
 
-# ── Public API ────────────────────────────────────────────────────────────────
+#general pipeline for a single function
 
 def run_pipeline(
     repo_url: str,

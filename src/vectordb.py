@@ -58,9 +58,14 @@ def retrieve_examples(fn_source: str, test_type: str, n_results: int = 3) -> lis
     if collection.count() == 0:
         return []
 
+    matching_ids = collection.get(where={"test_type": test_type}, include=[])["ids"]
+    match_count = len(matching_ids)
+    if match_count == 0:
+        return []
+
     results = collection.query(
         query_texts=[fn_source],
-        n_results=min(n_results, collection.count()),
+        n_results=min(n_results, match_count),
         where={"test_type": test_type},
     )
 
