@@ -23,6 +23,30 @@ PRESETS = {
 }
 
 
+# Path fragments that mark a file as a "reference" / "correct" implementation,
+# not the primary code under test. Applied when a function name matches in
+# multiple files — QuixBugs is the motivating case (python_programs/ vs
+# correct_python_programs/). Only kicks in on ambiguity; a single match is
+# always returned as-is.
+_REFERENCE_PATH_HINTS = ("correct_", "/correct/", "/reference/", "/solution", "/solutions/", "/fixed/")
+
+
+def _select_primary_match(matches: list[dict]) -> dict:
+    """Given multiple functions with the same name, pick the primary (non-reference) one.
+
+    Falls back to the first match if every candidate looks like a reference impl.
+    """
+    if len(matches) == 1:
+        return matches[0]
+
+    def is_reference(fn: dict) -> bool:
+        path = ("/" + fn.get("file_path", "").replace("\\", "/")).lower()
+        return any(hint in path for hint in _REFERENCE_PATH_HINTS)
+
+    primary = [f for f in matches if not is_reference(f)]
+    return primary[0] if primary else matches[0]
+
+
 # ── venv setup ────────────────────────────────────────────────────────────────
 
 def _setup_run_env(repo_dir: str) -> tuple[str | None, str | None]:
@@ -186,7 +210,10 @@ def run_pipeline(
                 _add_to_db(run_id, result)
             return result
 
-        fn = matches[0]
+        fn = _select_primary_match(matches)
+        if len(matches) > 1:
+            dropped = [m["file_path"] for m in matches if m is not fn]
+            print(f"  [extract] {len(matches)} files define '{fn_name}'; chose {fn['file_path']} (skipped {dropped})")
         if description:
             fn["description"] = description
         fn["spec"] = read_readme(tmp)
