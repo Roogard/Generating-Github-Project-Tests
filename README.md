@@ -46,7 +46,7 @@ The repo ships with a React + Vite dashboard (`webapp/`) backed by a FastAPI ser
 
 ```bash
 # Terminal 1 — backend on :8000
-uvicorn api.app:app --reload
+python -m uvicorn api.app:app --reload
 
 # Terminal 2 — frontend dev server on :5173 (proxies /api to :8000)
 cd webapp
