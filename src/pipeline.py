@@ -17,9 +17,9 @@ from src.repo_utils import clone_repo, extract_functions, read_readme, extract_t
 load_dotenv()
 
 PRESETS = {
-    "fast":     {"timeout": 30,  "max_turns": 2, "per_test_timeout": 2},
-    "default":  {"timeout": 60,  "max_turns": 4, "per_test_timeout": 5},
-    "thorough": {"timeout": 120, "max_turns": 8, "per_test_timeout": 10},
+    "fast":     {"timeout": 60,  "max_turns": 2, "per_test_timeout": 2},
+    "default":  {"timeout": 180, "max_turns": 4, "per_test_timeout": 5},
+    "thorough": {"timeout": 300, "max_turns": 8, "per_test_timeout": 10},
 }
 
 

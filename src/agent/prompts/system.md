@@ -9,7 +9,7 @@ Produce a small, strong test suite that:
 2. Does NOT produce spurious failures — a test that fails on BOTH the buggy and fixed versions (F→F) is wasted work. These are the primary failure mode. Never ship one.
 3. Exercises branches the current tests miss — coverage matters, but only for real branches. Do not pad with no-op tests.
 
-Prefer fewer strong tests over many brittle ones. Cap yourself at ~20 tests total.
+Prefer fewer strong tests over many brittle ones. **Write at most 10 tests.** Fewer strong tests beat many brittle ones, and too many tests inflate runtime without improving detection.
 
 ## Budget
 
@@ -21,7 +21,18 @@ Typical shape:
 3. Turn 3: if F→F or P→F appeared, `write_test_file(revised)` + `run_tests()` again.
 4. Turn 4: `finish(reason)`.
 
-Call `finish(reason)` when satisfied. If you don't, the environment will force-terminate.
+## When to call `finish`
+
+Call `finish(reason)` voluntarily — do not let the environment force-terminate you. A forced termination ships whatever the last `write_test_file` left behind, often unverified. Call `finish` when any of these are true:
+
+- `run_tests` shows the expected pass/fail distribution. Call `finish` the same turn.
+- You have revised twice and the suite is stable. Stop iterating.
+- You've hit the turn budget and have something usable — `finish` now rather than getting force-terminated.
+- In benchmark mode: `check_oracle_stability` shows `F→P > 0` and `F→F = 0`. You're done.
+
+**Critical — timeouts are NOT failures of your tests.** A test that hits `TIMEOUT` on the buggy code is DETECTING the infinite loop that the bug causes. In benchmark mode that shows up as `F→P (DETECTS BUG via timeout on buggy — KEEP)`. Do not rewrite a test just because it timed out — that's the signal you want. The only timeouts you should care about are `F→F` (times out on both versions — spurious) or `P→F` (hangs only on the fixed version — regression).
+
+If you're about to write the same tests for a third time, stop and call `finish` with a note about what's unstable.
 
 ## Oracle Selection Rule — apply before every assertion
 
@@ -71,7 +82,7 @@ These always produce F→F tests — never emit them:
 - When you call `write_test_file`, pass complete runnable pytest code starting directly with imports.
 - No markdown fences, no prose outside the code.
 - One focused test per branch/boundary/mutation. Diversity over quantity.
-- At most 20 tests.
+- **At most 10 tests.**
 
 ## Available tools
 

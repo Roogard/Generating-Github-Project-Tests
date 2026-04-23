@@ -35,15 +35,24 @@ def _strip_relative_imports(code: str) -> str:
 def _compact_run(result: dict) -> str:
     passed = len(result.get("passed", []))
     failed_names = result.get("failed", [])
-    error_names = result.get("errors", [])
-    lines = [f"{passed} passed, {len(failed_names)} failed, {len(error_names)} errors"]
+    error_names = [n for n in result.get("errors", []) if not n.startswith("__")]
+    timed_out = set(result.get("timed_out", []))
+    n_timeout = len(timed_out)
+    header = f"{passed} passed, {len(failed_names)} failed"
+    if n_timeout:
+        header += f" ({n_timeout} timed out)"
+    header += f", {len(error_names)} errors"
+    lines = [header]
     for i, name in enumerate(failed_names):
         detail = (result.get("failure_details") or [None] * (i + 1))[i] or {}
         longrepr = (detail.get("longrepr") or "").strip()
         if len(longrepr) > _LONGREPR_CAP:
             longrepr = longrepr[:_LONGREPR_CAP] + "...[truncated]"
-        lines.append(f"- {name}: FAILED — {longrepr}")
-    for i, name in enumerate(error_names):
+        kind = "TIMEOUT" if name in timed_out else "FAILED"
+        lines.append(f"- {name}: {kind} — {longrepr}")
+    for i, name in enumerate(result.get("errors", [])):
+        if name.startswith("__"):
+            continue  # synthetic markers; detail already caller-visible
         detail = (result.get("error_details") or [None] * (i + 1))[i] or {}
         longrepr = (detail.get("longrepr") or "").strip()
         if len(longrepr) > _LONGREPR_CAP:
@@ -71,6 +80,30 @@ def _compact_coverage(cov: dict, fn_source: str, fn_start_line: int) -> str:
 
 def _name_only(test_nodeid: str) -> str:
     return test_nodeid.split("::")[-1]
+
+
+def _oracle_sets(result: dict) -> tuple[set[str], set[str], set[str], set[str]]:
+    """Classify a pytest result for SWT-bench oracle labeling.
+
+    Returns (passed, failed_or_errored, timed_out, real_errors) — all sets of
+    bare test names.
+
+    failed_or_errored combines `failed` + non-synthetic `errors`. Rationale:
+    a test that errors on buggy code (infinite loop killed by timeout, uncaught
+    exception from the bug) and passes on fixed code is a legitimate detection.
+    Lumping errors into the same set as failures is what SWT-bench's spirit
+    calls for: does the test distinguish buggy from fixed?
+
+    Synthetic markers from test_runner (`__timeout__`, `__collection_error__`,
+    `__import_or_collection_error__`) are excluded — those are meta-level
+    pytest problems, not per-test signal, and don't match across runs.
+    """
+    passed = {_name_only(n) for n in result.get("passed", [])}
+    failed = {_name_only(n) for n in result.get("failed", [])}
+    real_errors = {_name_only(n) for n in result.get("errors", [])
+                   if not n.startswith("__")}
+    timed_out = {_name_only(n) for n in result.get("timed_out", [])}
+    return passed, failed | real_errors, timed_out, real_errors
 
 
 class TestGenEnv:
@@ -203,9 +236,16 @@ class TestGenEnv:
     def tool_view_coverage(self) -> str:
         if not os.path.isfile(self.test_file_path):
             return "ERROR: no test file yet. Call write_test_file first."
+        # If we've seen a test run, skip tests that timed out or errored so the
+        # coverage subprocess doesn't get killed by a single hanger.
+        deselect = []
+        if self.last_run:
+            _, _, to_skip_timeouts, to_skip_errors = _oracle_sets(self.last_run)
+            deselect = sorted(to_skip_timeouts | to_skip_errors)
         cov = _pytest_cov(
             self.test_file_path, self.fn, self.repo_dir,
-            timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
+            timeout=self.timeout, per_test_timeout=self.per_test_timeout,
+            deselect_tests=deselect, python_bin=self.python_bin,
         )
         self.last_cov = cov
         return _compact_coverage(cov, self.fn.get("source", ""), self.fn.get("start_line", 1))
@@ -227,8 +267,7 @@ class TestGenEnv:
             self.test_file_path, self.repo_dir,
             timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
         )
-        buggy_passed = {_name_only(n) for n in buggy_result.get("passed", [])}
-        buggy_failed = {_name_only(n) for n in buggy_result.get("failed", [])}
+        buggy_passed, buggy_fail_or_err, buggy_timeouts, buggy_errs = _oracle_sets(buggy_result)
 
         # 2. Swap in fixed, run again
         shutil.copy(fixed_src, target)
@@ -236,28 +275,44 @@ class TestGenEnv:
             self.test_file_path, self.repo_dir,
             timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
         )
-        fixed_passed = {_name_only(n) for n in fixed_result.get("passed", [])}
-        fixed_failed = {_name_only(n) for n in fixed_result.get("failed", [])}
+        fixed_passed, fixed_fail_or_err, fixed_timeouts, _ = _oracle_sets(fixed_result)
 
         # 3. Restore buggy so the agent continues iterating against it
         shutil.copy(buggy_src, target)
 
-        # 4. Label each test
-        all_names = buggy_passed | buggy_failed | fixed_passed | fixed_failed
+        # 4. Label each test. A test that fails OR errors on buggy and passes on
+        #    fixed counts as F→P — a hang or exception on buggy is a bug detection.
+        all_names = buggy_passed | buggy_fail_or_err | fixed_passed | fixed_fail_or_err
         f2p = f2f = p2p = p2f = 0
         lines = []
         for name in sorted(all_names):
-            if name in buggy_failed and name in fixed_passed:
-                label = "F→P (DETECTS BUG — keep)"
+            on_buggy_fail = name in buggy_fail_or_err
+            on_buggy_pass = name in buggy_passed
+            on_fixed_fail = name in fixed_fail_or_err
+            on_fixed_pass = name in fixed_passed
+
+            # Annotate WHY it failed on buggy for the agent's benefit
+            if on_buggy_fail:
+                if name in buggy_timeouts:
+                    why_buggy = "timeout"
+                elif name in buggy_errs:
+                    why_buggy = "error"
+                else:
+                    why_buggy = "fail"
+            else:
+                why_buggy = ""
+
+            if on_buggy_fail and on_fixed_pass:
+                label = f"F→P (DETECTS BUG via {why_buggy} on buggy — KEEP)"
                 f2p += 1
-            elif name in buggy_failed and name in fixed_failed:
-                label = "F→F (SPURIOUS — delete or weaken)"
+            elif on_buggy_fail and on_fixed_fail:
+                label = f"F→F (SPURIOUS — fails on both; delete or weaken)"
                 f2f += 1
-            elif name in buggy_passed and name in fixed_passed:
+            elif on_buggy_pass and on_fixed_pass:
                 label = "P→P (stable neutral)"
                 p2p += 1
-            elif name in buggy_passed and name in fixed_failed:
-                label = "P→F (REGRESSION — remove)"
+            elif on_buggy_pass and on_fixed_fail:
+                label = "P→F (REGRESSION — breaks on fixed; remove)"
                 p2f += 1
             else:
                 label = "?"
@@ -269,7 +324,7 @@ class TestGenEnv:
         if f2f or p2f:
             hint = "\nRevise: delete/replace F→F tests; investigate P→F regressions."
         elif f2p:
-            hint = "\nGood — you have detections and no spurious tests. You may finish."
+            hint = "\nGood — you have detections (F→P > 0) and no spurious tests. Call `finish` now."
         return summary + "\n\n" + "\n".join(lines) + hint
 
     def tool_search_similar_tests(self, query: str = "", k: int = 3) -> str:
@@ -364,11 +419,17 @@ class TestGenEnv:
         out["tests_errored"] = len((final_run or {}).get("errors", []))
         out["tests_run"] = out["tests_passed"] + out["tests_failed"] + out["tests_errored"]
 
-        # Coverage
+        # Coverage. Deselect tests that timed out or errored — including them
+        # kills the coverage subprocess (same pytest-timeout os._exit problem as
+        # batch run_tests on Windows). We still get usable coverage from the
+        # tests that actually work.
         if os.path.isfile(self.test_file_path):
+            _, _, to_skip_timeouts, to_skip_errors = _oracle_sets(final_run or {})
+            deselect = sorted(to_skip_timeouts | to_skip_errors)
             cov = _pytest_cov(
                 self.test_file_path, self.fn, self.repo_dir,
-                timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
+                timeout=self.timeout, per_test_timeout=self.per_test_timeout,
+                deselect_tests=deselect, python_bin=self.python_bin,
             )
             out["coverage"] = cov
             out["coverage_pct"] = cov.get("coverage_pct") if not cov.get("error") else None
@@ -376,7 +437,8 @@ class TestGenEnv:
             out["coverage"] = {}
             out["coverage_pct"] = None
 
-        # SWT-bench oracle transitions (benchmark mode only)
+        # SWT-bench oracle transitions (benchmark mode only). Uses the same
+        # "errors-count-as-failures" classification as check_oracle_stability.
         if self.benchmark_context and os.path.isfile(self.test_file_path):
             ctx = self.benchmark_context
             buggy_src = ctx["buggy_path"]
@@ -388,23 +450,21 @@ class TestGenEnv:
                 self.test_file_path, self.repo_dir,
                 timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
             )
-            buggy_passed = {_name_only(n) for n in buggy_result.get("passed", [])}
-            buggy_failed = {_name_only(n) for n in buggy_result.get("failed", [])}
+            buggy_passed, buggy_fail_or_err, _, _ = _oracle_sets(buggy_result)
 
             shutil.copy(fixed_src, target)
             fixed_result = _pytest_run(
                 self.test_file_path, self.repo_dir,
                 timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
             )
-            fixed_passed = {_name_only(n) for n in fixed_result.get("passed", [])}
-            fixed_failed = {_name_only(n) for n in fixed_result.get("failed", [])}
+            fixed_passed, fixed_fail_or_err, _, _ = _oracle_sets(fixed_result)
 
             shutil.copy(buggy_src, target)  # leave in buggy state
 
-            f2p = len(buggy_failed & fixed_passed)
-            f2f = len(buggy_failed & fixed_failed)
+            f2p = len(buggy_fail_or_err & fixed_passed)
+            f2f = len(buggy_fail_or_err & fixed_fail_or_err)
             p2p = len(buggy_passed & fixed_passed)
-            p2f = len(buggy_passed & fixed_failed)
+            p2f = len(buggy_passed & fixed_fail_or_err)
 
             out["metrics"] = {
                 "f2p": f2p, "f2f": f2f, "p2f": p2f, "p2p": p2p,
@@ -415,7 +475,7 @@ class TestGenEnv:
             }
             # Overwrite buggy-side test counts with the authoritative buggy-run
             out["tests_passed"] = len(buggy_passed)
-            out["tests_failed"] = len(buggy_failed)
+            out["tests_failed"] = len(buggy_fail_or_err)
             out["final_run"] = buggy_result
         else:
             out["metrics"] = {
