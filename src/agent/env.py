@@ -152,8 +152,11 @@ class TestGenEnv:
         return "\n".join(parts)
 
     def step(self, tool_name: str, args: dict) -> str:
-        """Dispatch one tool call. Returns the observation string."""
-        self.turn += 1
+        """Dispatch one tool call. Returns the observation string.
+
+        The turn counter lives on the LLM-call loop, not here — batched tool
+        calls in one LLM response share a turn.
+        """
         handler = getattr(self, f"tool_{tool_name}", None)
         if handler is None:
             obs = f"ERROR: unknown tool '{tool_name}'. Available: view_function, view_coverage, run_tests, check_oracle_stability, search_similar_tests, view_golden_example, write_test_file, finish."

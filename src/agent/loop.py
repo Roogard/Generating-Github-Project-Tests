@@ -45,13 +45,14 @@ def run_agent(env: TestGenEnv, cfg: dict, verbose: bool = True) -> dict:
         except Exception as e:
             print(f"  [agent] LLM error: {type(e).__name__}: {e}")
             break
+        env.turn += 1  # one successful LLM response = one turn, regardless of how many tools it batched
         messages.append(resp)
 
         tool_calls = getattr(resp, "tool_calls", None) or []
         if not tool_calls:
             silent_turns += 1
             if verbose:
-                print(f"  [agent] turn {env.turn + 1}: no tool call (silent turn {silent_turns})")
+                print(f"  [agent] turn {env.turn}: no tool call (silent turn {silent_turns})")
             if silent_turns >= 2:
                 break
             # nudge once with a user message
@@ -65,7 +66,7 @@ def run_agent(env: TestGenEnv, cfg: dict, verbose: bool = True) -> dict:
             call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", "") or ""
             if verbose:
                 preview = str(args)[:120]
-                print(f"  [agent] turn {env.turn + 1}: {name}({preview})")
+                print(f"  [agent] turn {env.turn}: {name}({preview})")
 
             tool_fn = tool_by_name.get(name)
             if tool_fn is None:

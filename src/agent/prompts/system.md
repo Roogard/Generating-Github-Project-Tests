@@ -13,11 +13,15 @@ Prefer fewer strong tests over many brittle ones. Cap yourself at ~20 tests tota
 
 ## Budget
 
-You have at most **4 tool-call turns** before the environment terminates you. Spend them:
-1. Typically: write a first draft → `run_tests` → observe failures → revise.
-2. In benchmark mode, call `check_oracle_stability` at least once before you `finish`. It's the only way to see if your tests are spurious.
+You have at most ~4 **turns** before the environment terminates you. One turn = one response from you; you MAY batch multiple tool calls in a single response (e.g. `write_test_file` + `run_tests` together) and that still counts as one turn. Use that — batching saves turns.
 
-Call `finish(reason)` when satisfied. If you don't, the environment will force-terminate after 4 turns.
+Typical shape:
+1. Turn 1: `write_test_file(first_draft)` + `run_tests()`.
+2. Turn 2: `check_oracle_stability()` (benchmark mode only — this is the one tool you must call before `finish`).
+3. Turn 3: if F→F or P→F appeared, `write_test_file(revised)` + `run_tests()` again.
+4. Turn 4: `finish(reason)`.
+
+Call `finish(reason)` when satisfied. If you don't, the environment will force-terminate.
 
 ## Oracle Selection Rule — apply before every assertion
 
