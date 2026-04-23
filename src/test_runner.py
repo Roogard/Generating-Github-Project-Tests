@@ -67,8 +67,12 @@ def run_tests(test_file, repo_dir, timeout=60, per_test_timeout=None, python_bin
     }
 
 
-def measure_coverage(test_file, fn, repo_dir, timeout=60, python_bin=None):
+def measure_coverage(test_file, fn, repo_dir, timeout=60, per_test_timeout=None, python_bin=None):
     """Run coverage.py on test_file and return coverage info for fn's line range.
+
+    per_test_timeout: if set, passes --timeout=N to pytest-timeout so a single
+    hanging test (e.g. an infinite loop in the buggy code) can't stall the
+    whole coverage pass.
 
     Returns dict with: covered_lines, uncovered_lines, coverage_pct, fn_start_line,
     fn_end_line, fn_source_lines (uncovered line -> source text), error.
@@ -83,7 +87,9 @@ def measure_coverage(test_file, fn, repo_dir, timeout=60, python_bin=None):
         subprocess.run(
             [py, "-m", "coverage", "run",
              f"--data-file={data_file}", f"--include={fn_abs}", "--branch",
-             "-m", "pytest", test_file, "-q", "--no-header", "--tb=no"],
+             "-m", "pytest", test_file,
+             *([f"--timeout={per_test_timeout}"] if per_test_timeout else []),
+             "-q", "--no-header", "--tb=no"],
             capture_output=True, text=True, env=env, timeout=timeout,
         )
         result = subprocess.run(

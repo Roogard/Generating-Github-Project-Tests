@@ -17,9 +17,9 @@ from src.repo_utils import clone_repo, extract_functions, read_readme, extract_t
 load_dotenv()
 
 PRESETS = {
-    "fast":     {"timeout": 30,  "max_turns": 2},
-    "default":  {"timeout": 60,  "max_turns": 4},
-    "thorough": {"timeout": 120, "max_turns": 8},
+    "fast":     {"timeout": 30,  "max_turns": 2, "per_test_timeout": 2},
+    "default":  {"timeout": 60,  "max_turns": 4, "per_test_timeout": 5},
+    "thorough": {"timeout": 120, "max_turns": 8, "per_test_timeout": 10},
 }
 
 
@@ -114,6 +114,7 @@ def run_agent_on_function(
     python_bin: str | None = None,
     timeout: int = 60,
     max_turns: int = 4,
+    per_test_timeout: int | None = None,
     benchmark_context: dict | None = None,
 ) -> dict:
     """Run the agentic loop for one function. Returns a persist-ready dict."""
@@ -126,6 +127,7 @@ def run_agent_on_function(
         python_bin=python_bin,
         timeout=timeout,
         max_turns=max_turns,
+        per_test_timeout=per_test_timeout,
         benchmark_context=benchmark_context,
     )
     try:
@@ -185,6 +187,7 @@ def run_pipeline(
     preset_cfg = PRESETS.get(preset, PRESETS["default"])
     timeout = preset_cfg["timeout"]
     max_turns = preset_cfg["max_turns"]
+    per_test_timeout = preset_cfg.get("per_test_timeout")
 
     run_dir = os.path.join(output_dir, repo_url.rstrip("/").split("/")[-1].replace(".git", ""))
     os.makedirs(run_dir, exist_ok=True)
@@ -225,6 +228,7 @@ def run_pipeline(
         fn_result = run_agent_on_function(
             fn, cfg, tmp, run_dir,
             python_bin=python_bin, timeout=timeout, max_turns=max_turns,
+            per_test_timeout=per_test_timeout,
         )
         if run_id is not None:
             _add_to_db(run_id, fn_result)
@@ -286,6 +290,7 @@ def run_project_for_api(
     preset_cfg = PRESETS.get(preset, PRESETS["default"])
     timeout = preset_cfg["timeout"]
     max_turns = preset_cfg["max_turns"]
+    per_test_timeout = preset_cfg.get("per_test_timeout")
 
     project_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
     run_dir = os.path.join(output_dir, project_name)
@@ -333,6 +338,7 @@ def run_project_for_api(
             fn_result = run_agent_on_function(
                 fn, cfg, tmp, fn_run_dir,
                 python_bin=python_bin, timeout=timeout, max_turns=max_turns,
+                per_test_timeout=per_test_timeout,
             )
             results.append(fn_result)
             if progress_callback:

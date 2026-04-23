@@ -115,7 +115,8 @@ def _quixbugs_split(names: list[str], populate_count: int, seed: int) -> tuple[l
 
 
 def _run_one_quixbug(program: str, qb_dir: str, run_dir: str, cfg: dict, timeout: int,
-                     max_turns: int, use_rag: bool, ingest_golden: bool) -> dict:
+                     max_turns: int, per_test_timeout: int | None,
+                     use_rag: bool, ingest_golden: bool) -> dict:
     from src.vectordb import ingest_example
 
     instance_id = f"quixbugs-{program}"
@@ -155,6 +156,7 @@ def _run_one_quixbug(program: str, qb_dir: str, run_dir: str, cfg: dict, timeout
         fn_result = run_agent_on_function(
             fn, cfg, tmp, instance_output,
             python_bin=None, timeout=timeout, max_turns=max_turns,
+            per_test_timeout=per_test_timeout,
             benchmark_context=benchmark_context,
         )
         elapsed = time.time() - t0
@@ -224,6 +226,7 @@ def run_quixbugs(
     preset_cfg = PRESETS.get(preset, PRESETS["default"])
     timeout = preset_cfg["timeout"]
     max_turns = preset_cfg["max_turns"]
+    per_test_timeout = preset_cfg.get("per_test_timeout")
 
     qb_tmp = tempfile.mkdtemp()
     try:
@@ -249,6 +252,7 @@ def run_quixbugs(
               f"[{cfg.get('provider')}/{cfg.get('model') or 'default'}]  turns<={max_turns}\n")
         return [
             _run_one_quixbug(prog, qb_tmp, run_dir, cfg, timeout, max_turns,
+                             per_test_timeout,
                              use_rag=use_rag_eff, ingest_golden=ingest_golden)
             for prog in programs
         ]

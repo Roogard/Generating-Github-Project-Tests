@@ -85,6 +85,7 @@ class TestGenEnv:
         python_bin: str | None = None,
         timeout: int = 60,
         max_turns: int = 4,
+        per_test_timeout: int | None = None,
         benchmark_context: dict | None = None,
         examples_dir: Path | None = None,
     ):
@@ -94,6 +95,7 @@ class TestGenEnv:
         self.python_bin = python_bin
         self.timeout = timeout
         self.max_turns = max_turns
+        self.per_test_timeout = per_test_timeout
         self.benchmark_context = benchmark_context
         self.examples_dir = examples_dir or (Path(__file__).parent / "examples" / "golden")
 
@@ -192,7 +194,8 @@ class TestGenEnv:
             return "ERROR: no test file yet. Call write_test_file first."
         result = _pytest_run(
             self.test_file_path, self.repo_dir,
-            timeout=self.timeout, python_bin=self.python_bin,
+            timeout=self.timeout, per_test_timeout=self.per_test_timeout,
+            python_bin=self.python_bin,
         )
         self.last_run = result
         return _compact_run(result)
@@ -202,7 +205,7 @@ class TestGenEnv:
             return "ERROR: no test file yet. Call write_test_file first."
         cov = _pytest_cov(
             self.test_file_path, self.fn, self.repo_dir,
-            timeout=self.timeout, python_bin=self.python_bin,
+            timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
         )
         self.last_cov = cov
         return _compact_coverage(cov, self.fn.get("source", ""), self.fn.get("start_line", 1))
@@ -222,7 +225,7 @@ class TestGenEnv:
         shutil.copy(buggy_src, target)
         buggy_result = _pytest_run(
             self.test_file_path, self.repo_dir,
-            timeout=self.timeout, python_bin=self.python_bin,
+            timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
         )
         buggy_passed = {_name_only(n) for n in buggy_result.get("passed", [])}
         buggy_failed = {_name_only(n) for n in buggy_result.get("failed", [])}
@@ -231,7 +234,7 @@ class TestGenEnv:
         shutil.copy(fixed_src, target)
         fixed_result = _pytest_run(
             self.test_file_path, self.repo_dir,
-            timeout=self.timeout, python_bin=self.python_bin,
+            timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
         )
         fixed_passed = {_name_only(n) for n in fixed_result.get("passed", [])}
         fixed_failed = {_name_only(n) for n in fixed_result.get("failed", [])}
@@ -336,6 +339,8 @@ class TestGenEnv:
         so metrics reflect what the agent actually shipped, not what it last
         inspected mid-loop. Always measures coverage on the final file.
         """
+        mode = "benchmark oracle + coverage" if self.benchmark_context else "final tests + coverage"
+        print(f"  [env] computing summary ({mode})...")
         out: dict = {
             "test_file_path": self.test_file_path if os.path.isfile(self.test_file_path) else "",
             "test_code": "",
@@ -351,7 +356,7 @@ class TestGenEnv:
         if os.path.isfile(self.test_file_path):
             final_run = _pytest_run(
                 self.test_file_path, self.repo_dir,
-                timeout=self.timeout, python_bin=self.python_bin,
+                timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
             )
         out["final_run"] = final_run or {}
         out["tests_passed"] = len((final_run or {}).get("passed", []))
@@ -363,7 +368,7 @@ class TestGenEnv:
         if os.path.isfile(self.test_file_path):
             cov = _pytest_cov(
                 self.test_file_path, self.fn, self.repo_dir,
-                timeout=self.timeout, python_bin=self.python_bin,
+                timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
             )
             out["coverage"] = cov
             out["coverage_pct"] = cov.get("coverage_pct") if not cov.get("error") else None
@@ -381,7 +386,7 @@ class TestGenEnv:
             shutil.copy(buggy_src, target)
             buggy_result = _pytest_run(
                 self.test_file_path, self.repo_dir,
-                timeout=self.timeout, python_bin=self.python_bin,
+                timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
             )
             buggy_passed = {_name_only(n) for n in buggy_result.get("passed", [])}
             buggy_failed = {_name_only(n) for n in buggy_result.get("failed", [])}
@@ -389,7 +394,7 @@ class TestGenEnv:
             shutil.copy(fixed_src, target)
             fixed_result = _pytest_run(
                 self.test_file_path, self.repo_dir,
-                timeout=self.timeout, python_bin=self.python_bin,
+                timeout=self.timeout, per_test_timeout=self.per_test_timeout, python_bin=self.python_bin,
             )
             fixed_passed = {_name_only(n) for n in fixed_result.get("passed", [])}
             fixed_failed = {_name_only(n) for n in fixed_result.get("failed", [])}
