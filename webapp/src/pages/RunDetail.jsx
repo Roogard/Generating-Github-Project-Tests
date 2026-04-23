@@ -80,7 +80,6 @@ function OracleMatrix({ run }) {
 
 function FunctionCard({ fn }) {
   const [open, setOpen] = useState(false)
-  const [tab, setTab] = useState('whitebox')
 
   return (
     <div className="card" style={{ padding: 0, marginBottom: 12 }}>
@@ -115,13 +114,11 @@ function FunctionCard({ fn }) {
             </div>
           </div>
 
-          <div className="tabs">
-            <div className={`tab${tab === 'whitebox' ? ' active' : ''}`} onClick={() => setTab('whitebox')}>whitebox</div>
-            <div className={`tab${tab === 'blackbox' ? ' active' : ''}`} onClick={() => setTab('blackbox')}>blackbox</div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8, fontFamily: 'var(--mono)' }}>
+            test_agent.py
           </div>
-
           <pre className="code-block">
-            {(tab === 'whitebox' ? fn.whitebox_code : fn.blackbox_code) || '— no code —'}
+            {fn.test_code || '— no code —'}
           </pre>
         </div>
       )}

@@ -11,7 +11,6 @@ function ExampleCard({ ex }) {
         <div>
           <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{ex.fn_name}</span>
           <span style={{ marginLeft: 8, fontSize: 12, color: '#64748b' }}>{ex.fn_file}</span>
-          <span style={{ marginLeft: 8 }} className={`badge badge-${ex.test_type === 'whitebox' ? 'running' : 'pending'}`}>{ex.test_type}</span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {ex.coverage_pct != null && <span style={{ fontSize: 12, color: '#6ee7b7' }}>{Math.round(ex.coverage_pct)}% cov</span>}
@@ -44,13 +43,11 @@ function ExampleCard({ ex }) {
 export default function VectorDB() {
   const [stats, setStats] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [searchType, setSearchType] = useState('whitebox')
   const [searchN, setSearchN] = useState(3)
   const [searchResults, setSearchResults] = useState(null)
   const [examples, setExamples] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
-  const [filterType, setFilterType] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const LIMIT = 20
@@ -60,20 +57,19 @@ export default function VectorDB() {
   }, [])
 
   const loadExamples = () => {
-    getVectorExamples(page, LIMIT, filterType)
+    getVectorExamples(page, LIMIT)
       .then(r => { setExamples(r.examples); setTotal(r.total) })
       .catch(e => setError(e.message))
   }
 
-  useEffect(() => { setPage(1) }, [filterType])
-  useEffect(() => { loadExamples() }, [page, filterType])
+  useEffect(() => { loadExamples() }, [page])
 
   const doSearch = async () => {
     if (!searchQuery.trim()) return
     setLoading(true)
     setSearchResults(null)
     try {
-      const r = await vectorSearch(searchQuery.trim(), searchType, searchN)
+      const r = await vectorSearch(searchQuery.trim(), searchN)
       setSearchResults(r.results)
       if (r.error) setError(r.error)
     } catch (e) {
@@ -121,13 +117,6 @@ export default function VectorDB() {
           />
         </div>
         <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end', marginBottom: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label>Test Type</label>
-            <select value={searchType} onChange={e => setSearchType(e.target.value)}>
-              <option value="whitebox">whitebox</option>
-              <option value="blackbox">blackbox</option>
-            </select>
-          </div>
           <div style={{ width: 120 }}>
             <label>Results (n)</label>
             <input type="number" min="1" max="20" value={searchN} onChange={e => setSearchN(parseInt(e.target.value))} />
@@ -156,17 +145,12 @@ export default function VectorDB() {
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h2 style={{ fontSize: 16 }}>Stored Examples ({total})</h2>
-          <select style={{ width: 160 }} value={filterType} onChange={e => setFilterType(e.target.value)}>
-            <option value="">All types</option>
-            <option value="whitebox">whitebox</option>
-            <option value="blackbox">blackbox</option>
-          </select>
         </div>
 
         {total === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '48px', color: '#64748b' }}>
             <p>No examples stored yet.</p>
-            <p style={{ marginTop: 8, fontSize: 13 }}>Run test generation with "Save to ChromaDB" enabled to populate the vector store.</p>
+            <p style={{ marginTop: 8, fontSize: 13 }}>Run the QuixBugs populate benchmark to ingest resolved examples into the store.</p>
           </div>
         ) : (
           <>

@@ -5,7 +5,6 @@ provided for script / background-task callers that want one.
 """
 from __future__ import annotations
 
-import os
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -73,26 +72,17 @@ def delete_run(db: Session, run_id: int) -> bool:
 
 
 def save_function_result(db: Session, run_id: int, result: dict) -> Function:
-    #gets whitebox and blackbox from pipeline, as well as if tests passed/failed
-    test_dir = result.get("test_dir", "")
-    wb_path = os.path.join(test_dir, "test_whitebox.py")
-    bb_path = os.path.join(test_dir, "test_blackbox.py")
-    wb_code = open(wb_path).read() if os.path.isfile(wb_path) else None
-    bb_code = open(bb_path).read() if os.path.isfile(bb_path) else None
-
-    outcomes = result.get("test_outcomes", {})
-    wb_pass = len(outcomes.get(wb_path, {}).get("passed", []))
-    wb_fail = len(outcomes.get(wb_path, {}).get("failed", []))
-    bb_pass = len(outcomes.get(bb_path, {}).get("passed", []))
-    bb_fail = len(outcomes.get(bb_path, {}).get("failed", []))
-
-    #puts all info into function table
+    """Persist one agent run's output: single test file, pass/fail counts, coverage."""
     fn = Function(
-        run_id=run_id, name=result["fn_name"], file_path=result.get("fn_file", ""),
-        source=result.get("fn_source", ""), whitebox_code=wb_code, blackbox_code=bb_code,
-        tests_passed=wb_pass + bb_pass, tests_failed=wb_fail + bb_fail,
+        run_id=run_id,
+        name=result["fn_name"],
+        file_path=result.get("fn_file", ""),
+        source=result.get("fn_source", ""),
+        test_code=result.get("test_code") or None,
+        tests_passed=result.get("tests_passed", 0),
+        tests_failed=result.get("tests_failed", 0),
+        coverage_pct=result.get("coverage_pct"),
     )
-    #adds function to database
     db.add(fn)
     db.flush()
     return fn
@@ -129,7 +119,7 @@ def score_function(
     """
     if not fn.source or not fn.source.strip():
         return 0, 0, None, "no_source"
-    if not (fn.whitebox_code or fn.blackbox_code):
+    if not fn.test_code:
         return 0, 0, None, "no_tests"
     passed = fn.tests_passed or 0
     failed = fn.tests_failed or 0

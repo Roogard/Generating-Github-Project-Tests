@@ -69,11 +69,10 @@ class Function(Base):
     file_path: Mapped[str] = mapped_column(String, nullable=False)
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Denormalized test code (wb + bb, two fixed types)
-    whitebox_code: Mapped[str | None] = mapped_column(Text, nullable=True)
-    blackbox_code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The agent-produced test file
+    test_code: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Aggregate outcomes across whitebox + blackbox
+    # Aggregate outcomes
     tests_passed: Mapped[int] = mapped_column(Integer, default=0)
     tests_failed: Mapped[int] = mapped_column(Integer, default=0)
     coverage_pct: Mapped[float | None] = mapped_column(Float, nullable=True)

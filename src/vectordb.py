@@ -1,3 +1,8 @@
+"""ChromaDB RAG memory — one bucket per `(function, test_agent.py)` pair.
+
+The agent calls `retrieve_examples(query, k)` on demand (see `src/agent/tools.py`).
+The QuixBugs populate phase calls `ingest_example` for runs that pass the oracle.
+"""
 from __future__ import annotations
 import chromadb
 import os
@@ -23,52 +28,40 @@ def get_collection() -> chromadb.Collection:
 def ingest_example(
     fn: dict,
     repo_url: str,
-    whitebox_code: str,
-    blackbox_code: str,
+    test_code: str,
     passed: int = 0,
     failed: int = 0,
     coverage_pct: float | None = None,
 ) -> None:
+    """Store one `(function, test_agent.py)` pair. Idempotent on fn_name."""
+    if not test_code or not test_code.strip():
+        return
     source = fn["source"]
     fn_name = fn["name"]
     collection = get_collection()
 
-    base_meta = {
+    meta = {
         "fn_name": fn_name,
         "fn_file": fn.get("file_path", ""),
         "fn_source": source,
         "repo_url": repo_url,
         "passed": passed,
         "failed": failed,
-        "coverage_pct": coverage_pct or -1.0,
+        "coverage_pct": coverage_pct if coverage_pct is not None else -1.0,
+        "test_code": test_code,
     }
-
-    ids, documents, metadatas = [], [], []
-    for test_type, test_code in [("whitebox", whitebox_code), ("blackbox", blackbox_code)]:
-        if test_code:
-            ids.append(f"{fn_name}_{test_type}")
-            documents.append(source)
-            metadatas.append({**base_meta, "test_type": test_type, "test_code": test_code})
-
-    collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+    collection.upsert(ids=[fn_name], documents=[source], metadatas=[meta])
 
 
-def retrieve_examples(fn_source: str, test_type: str, n_results: int = 3) -> list[dict]:
+def retrieve_examples(query: str, n_results: int = 3) -> list[dict]:
+    """Return up to n_results similar stored examples. Embeds `query` against fn_source."""
     collection = get_collection()
     if collection.count() == 0:
         return []
-
-    matching_ids = collection.get(where={"test_type": test_type}, include=[])["ids"]
-    match_count = len(matching_ids)
-    if match_count == 0:
-        return []
-
     results = collection.query(
-        query_texts=[fn_source],
-        n_results=min(n_results, match_count),
-        where={"test_type": test_type},
+        query_texts=[query],
+        n_results=min(n_results, collection.count()),
     )
-
     examples = []
     for meta in results["metadatas"][0]:
         examples.append({

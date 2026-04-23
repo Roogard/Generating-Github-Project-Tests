@@ -32,19 +32,18 @@ def vector_stats():
 @vector_router.post("/search")
 def vector_search(body: dict):
     query = (body.get("query") or "").strip()
-    test_type = body.get("test_type", "whitebox")
     n = min(int(body.get("n", 3)), 20)
     if not query:
         raise HTTPException(status_code=400, detail="query is required")
     try:
         from src.vectordb import retrieve_examples
-        return {"results": retrieve_examples(query, test_type, n_results=n)}
+        return {"results": retrieve_examples(query, n_results=n)}
     except Exception as e:
         return {"results": [], "error": str(e)}
 
 
 @vector_router.get("/examples")
-def list_examples(page: int = 1, limit: int = 20, test_type: str = ""):
+def list_examples(page: int = 1, limit: int = 20):
     try:
         from src.vectordb import get_collection
         col = get_collection()
@@ -52,13 +51,8 @@ def list_examples(page: int = 1, limit: int = 20, test_type: str = ""):
         if count == 0:
             return {"total": 0, "page": page, "limit": limit, "examples": []}
 
-        where = {"test_type": test_type} if test_type else None
         offset = (page - 1) * limit
-
-        kwargs: dict = {"include": ["metadatas", "documents"], "limit": limit, "offset": offset}
-        if where:
-            kwargs["where"] = where
-        results = col.get(**kwargs)
+        results = col.get(include=["metadatas", "documents"], limit=limit, offset=offset)
 
         examples = []
         ids = results.get("ids", [])
@@ -71,7 +65,6 @@ def list_examples(page: int = 1, limit: int = 20, test_type: str = ""):
                 "fn_file": meta.get("fn_file", ""),
                 "fn_source": meta.get("fn_source", ""),
                 "repo_url": meta.get("repo_url", ""),
-                "test_type": meta.get("test_type", ""),
                 "passed": meta.get("passed", 0),
                 "failed": meta.get("failed", 0),
                 "coverage_pct": cov if cov >= 0 else None,

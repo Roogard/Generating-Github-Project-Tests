@@ -29,9 +29,9 @@ export const createBenchmark = (body) => req('POST', '/runs/benchmark', body)
 
 // VectorDB (read-only browser + similarity search)
 export const getVectorStats = () => req('GET', '/vectordb/stats')
-export const vectorSearch = (query, testType, n) => req('POST', '/vectordb/search', { query, test_type: testType, n })
-export const getVectorExamples = (page = 1, limit = 20, testType = '') =>
-  req('GET', `/vectordb/examples?page=${page}&limit=${limit}${testType ? `&test_type=${testType}` : ''}`)
+export const vectorSearch = (query, n) => req('POST', '/vectordb/search', { query, n })
+export const getVectorExamples = (page = 1, limit = 20) =>
+  req('GET', `/vectordb/examples?page=${page}&limit=${limit}`)
 
 // Analytics
 export const getAnalyticsSummary = (filter = 'benchmark') =>

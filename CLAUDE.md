@@ -1,17 +1,23 @@
 # GGPT (Generating Github Project Tests)
 
-Automated test generation for Python GitHub repositories using LLMs.
-Generated tests that fail on the buggy codebase and pass after applying the ground-truth fix indicate a detected bug — this is the SWT-bench evaluation paradigm.
+Automated test generation for Python GitHub repositories using an agentic LLM loop.
+Generated tests that fail on the buggy codebase and pass after applying the ground-truth
+fix indicate a detected bug — the SWT-bench evaluation paradigm.
 
 ---
 
 ## What it does
 
-1. Clones a repo (or a buggy/fixed pair from QuixBugs for benchmark mode)
-2. Extracts target Python functions via tree-sitter AST parsing
-3. Generates whitebox + blackbox tests concurrently via an LLM
-4. Runs tests with pytest and reports failures + coverage
-5. In benchmark mode: applies the ground-truth fix patch and measures SWT-bench transitions (F→P, F→F, P→F, P→P)
+1. Clones a repo (or a buggy/fixed pair from QuixBugs in benchmark mode).
+2. Extracts target Python functions via tree-sitter.
+3. Hands each function to an agent with tools (`view_function`, `run_tests`,
+   `view_coverage`, `check_oracle_stability` in benchmark mode,
+   `search_similar_tests`, `view_golden_example`, `write_test_file`, `finish`).
+4. The agent iterates — write → run → observe failures/coverage → revise —
+   up to a preset-controlled turn budget (default 4).
+5. In benchmark mode the agent can directly observe F→P / F→F / P→F labels
+   per test and revise spurious ones before calling `finish`.
+6. Final metrics are persisted to SQLite and surfaced on the Analytics page.
 
 ---
 
@@ -19,29 +25,36 @@ Generated tests that fail on the buggy codebase and pass after applying the grou
 
 ```
 src/
-  pipeline.py      Core orchestration: generate → write → run → parse failures → measure coverage
-  llm.py           LLM provider config + concurrent test generation (LangChain)
-  repo_utils.py    Git clone (HEAD or specific commit), tree-sitter function extraction
-  test_runner.py   pytest runner (JSON report) + per-file coverage measurement
-  vectordb.py      ChromaDB wrapper — RAG few-shot retrieval for test generation
-  benchmarks.py    QuixBugs batch driver, invoked by the API
-  prompts/
-    whitebox.md    System prompt for structural/whitebox tests
-    blackbox.md    System prompt for behavioural/blackbox tests
+  pipeline.py        Clone → extract → run_agent per fn → persist
+  llm.py             Provider plumbing (build_config, get_llm). No generation logic.
+  repo_utils.py      Git clone, tree-sitter function extraction
+  test_runner.py     pytest runner (JSON report) + per-function coverage
+  vectordb.py        ChromaDB — single bucket, retrieve_examples(query, k)
+  benchmarks.py      QuixBugs batch driver (populate / measure phases)
+  agent/
+    __init__.py      Re-exports TestGenEnv, run_agent
+    env.py           TestGenEnv — state, tools, summary (oracle bookkeeping)
+    tools.py         LangChain @tool wrappers over env methods
+    loop.py          run_agent — hand-rolled tool-calling loop (~50 lines)
+    prompts/
+      system.md      Single system prompt
+    examples/
+      golden/        Hand-curated exemplar pairs
+      dynamic/       Placeholder — Chroma RAG lives at ./chroma_db/
 
 api/
-  app.py           FastAPI app + CORS + lifespan (init_db) + SPA mount
-  db.py            SQLite via SQLAlchemy — session factory + Base
-  models.py        ORM: Run, Function (cascade delete)
-  routes.py        REST: /api/runs/* + /api/runs/benchmark (admin)
-  browser_routes.py REST: /api/vectordb/*, /api/analytics/summary
-  store.py         Thin DAL + benchmark-interpreter summary_stats
-  auth.py          Admin passcode gate (X-Admin-Key header)
-  constants.py     StrEnum constants: RunStatus, TestType
+  app.py             FastAPI app + CORS + lifespan (init_db) + SPA mount
+  db.py              SQLite via SQLAlchemy — session factory + Base
+  models.py          ORM: Run, Function (single test_code column)
+  routes.py          REST: /api/runs/* + /api/runs/benchmark
+  browser_routes.py  REST: /api/vectordb/*, /api/analytics/summary
+  store.py           Thin DAL + benchmark-interpreter summary_stats
+  auth.py            Admin passcode gate (X-Admin-Key header)
+  constants.py       StrEnum: RunStatus
 
-webapp/            React + Vite dashboard — the only user-facing entry point
-  src/pages/       RunsList, NewRun, RunDetail, BenchmarkRun (admin),
-                   VectorDB, Analytics
+webapp/              React + Vite dashboard — the only user-facing entry point
+  src/pages/         RunsList, NewRun, RunDetail, BenchmarkRun,
+                     VectorDB, Analytics
 ```
 
 ---
@@ -62,9 +75,19 @@ Open http://localhost:5173.
 cd webapp && npm run build
 cd .. && uvicorn api.app:app
 ```
-FastAPI auto-mounts `webapp/dist/` at `/`. Also available via `ggpt-api` console script or `docker compose up --build`.
+FastAPI auto-mounts `webapp/dist/` at `/`. Also available via `ggpt-api`
+console script or `docker compose up --build`.
 
-**Benchmarks:** the `/runs/benchmark` page (admin-gated) kicks off a QuixBugs batch. Each program becomes its own Run in the DB; the Analytics page aggregates the SWT metrics and compares base vs RAG.
+**Benchmarks:** the `/runs/benchmark` page (admin-gated) kicks off a QuixBugs
+batch. Each program becomes its own Run in the DB; the Analytics page
+aggregates SWT metrics and compares populate vs measure / with-RAG vs baseline.
+
+**First run after pulling this branch:** the schema changed (single `test_code`
+column on Function). Reset the DB before starting:
+```
+python -c "from api.db import reset_db; reset_db()"
+```
+or delete `ggpt.db`.
 
 ---
 
@@ -72,35 +95,41 @@ FastAPI auto-mounts `webapp/dist/` at `/`. Also available via `ggpt-api` console
 
 | Field | Meaning |
 |-------|---------|
-| `tests_passed` | Tests passing on buggy code (not detecting bug) |
-| `tests_failed` | Tests failing on buggy code (potential detections) |
+| `tests_passed` | Tests passing on buggy code |
+| `tests_failed` | Tests failing on buggy code |
 | `patch_applied` | W — ground-truth patch applied cleanly |
 | `f2p` | F→P — fail on buggy, pass on fixed (true positives) |
 | `f2f` | F→F — fail on both (spurious / false positives) |
 | `p2f` | P→F — pass on buggy, fail on fixed (regressions introduced) |
 | `p2p` | P→P — pass on both (stable neutral tests) |
-| `detected` | `f2p > 0` — at least one test transitions fail→pass under the oracle |
+| `detected` | `f2p > 0` — at least one test transitions fail→pass |
 | `resolved` | S — `f2p > 0 AND f2f == 0 AND p2f == 0` (primary SWT-bench metric) |
 
 ---
 
-## Historical benchmark performance (BugsInPy, 9 bugs, DeepSeek — prior evaluation)
+## Historical baseline (pre-agent, BugsInPy 9 bugs, DeepSeek)
 
 | Metric | Result |
 |--------|--------|
 | S (Resolved) | 0 / 9 (0%) |
 | Detected | 8 / 9 (89%) |
-| W (Applicability) | 8 / 9 (89%) |
 | F→P total | 40 |
 | F→F total | 98 |
 | P→F total | 21 |
 
-**Primary bottleneck:** F→F dominance — generated tests fail on both buggy and fixed code, preventing any instance from reaching S=1 even when F→P > 0.
+**Bottleneck:** F→F dominance. Tests failed on both buggy and fixed code
+because the single-shot pipeline never ran them. The agentic loop addresses
+this by giving the agent `check_oracle_stability` in benchmark mode —
+spurious tests become visible mid-loop and can be revised before `finish`.
 
 ---
 
 ## Guiding constraints
 
-- All runs go through the webapp → API → DB. Do not add CLI entry points.
-- Keep each module single-purpose; extend rather than rewrite.
-- `src/pipeline.py` calls `test_runner.measure_coverage()` per generated test file — coverage is a wired feature, not a spare.
+- All runs go through webapp → API → DB. No CLI entry points.
+- Keep modules single-purpose; extend the agent under `src/agent/` rather
+  than growing `pipeline.py`.
+- Coverage is measured on the agent's final test file (see
+  `TestGenEnv.summary`) — it is a wired feature, not a spare.
+- Golden examples live at `src/agent/examples/golden/`. Add new ones when a
+  pattern proves itself — they're always available via `view_golden_example`.

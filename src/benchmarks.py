@@ -1,8 +1,11 @@
 """Web-triggered QuixBugs benchmark runner.
 
 Called from `api/routes.py::_execute_benchmark` as a background task. Each
-program processed here becomes its own `Run` row via `_persist_benchmark_run`,
-so all results land in the DB and are visible on the Analytics page.
+program becomes its own `Run` row via `_persist_benchmark_run`, so results
+land in the DB and show up on the Analytics page.
+
+Oracle bookkeeping (buggy↔fixed swap, F→P / F→F / P→F / P→P counting) is
+performed inside the agent env (`src/agent/env.py::TestGenEnv.summary`).
 """
 from __future__ import annotations
 
@@ -12,9 +15,8 @@ import tempfile
 import time
 from datetime import datetime
 
+from src.pipeline import PRESETS, run_agent_on_function
 from src.repo_utils import clone_repo, extract_functions, read_readme
-from src.pipeline import run_for_repo, PRESETS
-from src.test_runner import run_tests as _run_tests_file
 
 
 QUIXBUGS_URL = "https://github.com/jkoppel/QuixBugs"
@@ -28,43 +30,35 @@ def _persist_benchmark_run(
     repo_url: str,
     cfg: dict,
     use_rag: bool,
-    functions: list,
-    instance_output: str,
-    run_result: dict,
-    metrics: dict,
+    fn: dict,
+    fn_result: dict,
+    elapsed: float,
 ) -> None:
-    """Persist one benchmark invocation into the Runs + Functions tables.
-    All SWT-bench metrics land as first-class Run columns.
-    """
+    """Persist one benchmark invocation into the Runs + Functions tables."""
     from api import store
     from api.models import Function as FnRow
     from api.constants import RunStatus
 
-    test_dir = os.path.join(instance_output, "tests")
-    wb_path = os.path.join(test_dir, "test_whitebox.py")
-    bb_path = os.path.join(test_dir, "test_blackbox.py")
-    wb_code = open(wb_path, encoding="utf-8").read() if os.path.isfile(wb_path) else None
-    bb_code = open(bb_path, encoding="utf-8").read() if os.path.isfile(bb_path) else None
-
-    tests_passed = run_result.get("tests_passed", 0)
-    tests_failed = len([f for f in run_result.get("failures", []) if f.get("kind") == "failure"])
-    tests_errored = run_result.get("tests_errored", 0)
-    tests_run = run_result.get("tests_run", 0)
+    metrics = fn_result.get("metrics") or {}
+    tests_passed = fn_result.get("tests_passed", 0)
+    tests_failed = fn_result.get("tests_failed", 0)
+    tests_errored = fn_result.get("tests_errored", 0)
+    tests_run = fn_result.get("tests_run", 0)
 
     try:
         with store.session_scope() as db:
             run = store.create_run(db,
                 repo_url=repo_url,
-                function_name=",".join(fn["name"] for fn in functions),
+                function_name=fn["name"],
                 mode="quixbugs",
                 benchmark_id=benchmark_id,
                 status=RunStatus.DONE,
                 provider=cfg.get("provider"),
                 model=cfg.get("model"),
                 use_rag=use_rag,
-                output_dir=instance_output,
-                progress_current=len(functions),
-                progress_total=len(functions),
+                output_dir=fn_result.get("output_dir"),
+                progress_current=1,
+                progress_total=1,
                 finished_at=datetime.utcnow(),
                 tests_run=tests_run,
                 tests_passed=tests_passed,
@@ -78,19 +72,18 @@ def _persist_benchmark_run(
                 detected=bool(metrics.get("detected")),
                 resolved=bool(metrics.get("resolved")),
                 golden=bool(metrics.get("golden")),
-                elapsed_seconds=metrics.get("elapsed_seconds"),
+                elapsed_seconds=round(elapsed, 1),
             )
-            for idx, fn in enumerate(functions):
-                db.add(FnRow(
-                    run_id=run.id,
-                    name=fn["name"],
-                    file_path=fn.get("file_path", ""),
-                    source=fn.get("source"),
-                    whitebox_code=wb_code,
-                    blackbox_code=bb_code,
-                    tests_passed=tests_passed if idx == 0 else 0,
-                    tests_failed=tests_failed if idx == 0 else 0,
-                ))
+            db.add(FnRow(
+                run_id=run.id,
+                name=fn["name"],
+                file_path=fn.get("file_path", ""),
+                source=fn.get("source"),
+                test_code=fn_result.get("test_code") or None,
+                tests_passed=tests_passed,
+                tests_failed=tests_failed,
+                coverage_pct=fn_result.get("coverage_pct"),
+            ))
             run_id = run.id
         print(f"  [sql] persisted run id={run_id} (benchmark_id={benchmark_id})")
     except Exception as e:
@@ -122,18 +115,19 @@ def _quixbugs_split(names: list[str], populate_count: int, seed: int) -> tuple[l
 
 
 def _run_one_quixbug(program: str, qb_dir: str, run_dir: str, cfg: dict, timeout: int,
-                     use_rag: bool, ingest_golden: bool) -> dict:
+                     max_turns: int, use_rag: bool, ingest_golden: bool) -> dict:
     from src.vectordb import ingest_example
 
     instance_id = f"quixbugs-{program}"
     instance_output = os.path.join(run_dir, instance_id)
+    os.makedirs(instance_output, exist_ok=True)
     print(f"\n{'─' * 55}\n  {instance_id}")
 
     buggy_src = os.path.join(qb_dir, "python_programs", f"{program}.py")
     fixed_src = os.path.join(qb_dir, "correct_python_programs", f"{program}.py")
     if not os.path.isfile(buggy_src) or not os.path.isfile(fixed_src):
         print("  [skip] missing buggy/fixed file")
-        return {"instance_id": instance_id, "project": "quixbugs", "program": program, "status": "missing"}
+        return {"instance_id": instance_id, "status": "missing"}
 
     tmp = tempfile.mkdtemp()
     try:
@@ -145,98 +139,72 @@ def _run_one_quixbug(program: str, qb_dir: str, run_dir: str, cfg: dict, timeout
         if not functions:
             functions = all_functions
         if not functions:
-            return {"instance_id": instance_id, "project": "quixbugs", "program": program, "status": "no_targets"}
+            return {"instance_id": instance_id, "status": "no_targets"}
+        fn = functions[0]
+        fn["spec"] = read_readme(qb_dir)
+        fn["test_examples"] = []
+        fn["callees"] = []
 
-        spec = read_readme(qb_dir)
-        for fn in functions:
-            fn["spec"] = spec
-            fn["test_examples"] = []
-            fn["callees"] = []
+        benchmark_context = {
+            "buggy_path": buggy_src,
+            "fixed_path": fixed_src,
+            "target_path": target,
+        }
 
         t0 = time.time()
-        run_result = run_for_repo(functions, instance_output, tmp, cfg, timeout,
-                                  use_rag=use_rag, python_bin=None)
-        tests_run = run_result["tests_run"]
-        tests_passed_buggy = run_result["tests_passed"]
-        tests_errored = run_result["tests_errored"]
-        failures = run_result["failures"]
-        initial_passed = set(run_result["passed_names"])
-        tests_failed_buggy = len([f for f in failures if f["kind"] == "failure"])
+        fn_result = run_agent_on_function(
+            fn, cfg, tmp, instance_output,
+            python_bin=None, timeout=timeout, max_turns=max_turns,
+            benchmark_context=benchmark_context,
+        )
+        elapsed = time.time() - t0
 
-        # Oracle: swap in correct version, re-run each test file
-        shutil.copy(fixed_src, target)
-        f_to_p = f_to_f = p_to_f = 0
-        patch_applied = True
-        failed_names = {f["name"].split("::")[-1] for f in failures if f["kind"] == "failure"}
-        test_dir = os.path.join(instance_output, "tests")
-        if os.path.isdir(test_dir):
-            for tfile in sorted(os.listdir(test_dir)):
-                if tfile.startswith("test_") and tfile.endswith(".py"):
-                    tpath = os.path.join(test_dir, tfile)
-                    res = _run_tests_file(tpath, tmp, timeout, python_bin=None)
-                    fixed_passed = {n.split("::")[-1] for n in res["passed"]}
-                    fixed_failed = {n.split("::")[-1] for n in res["failed"]}
-                    f_to_p += len(fixed_passed & failed_names)
-                    f_to_f += len(fixed_failed & failed_names)
-                    p_to_f += len(fixed_failed & initial_passed)
-
-        detected = f_to_p > 0
-        resolved = f_to_p > 0 and f_to_f == 0 and p_to_f == 0
-        p_to_p = tests_passed_buggy - p_to_f
-        elapsed = round(time.time() - t0, 1)
-
-        golden = f_to_p > 0 and f_to_f == 0
+        metrics = fn_result.get("metrics") or {}
+        f2p = int(metrics.get("f2p") or 0)
+        f2f = int(metrics.get("f2f") or 0)
+        p2f = int(metrics.get("p2f") or 0)
+        detected = bool(metrics.get("detected"))
+        resolved = bool(metrics.get("resolved"))
 
         ingested = False
-        if ingest_golden and resolved:
-            wb_path = os.path.join(test_dir, "test_whitebox.py")
-            bb_path = os.path.join(test_dir, "test_blackbox.py")
-            wb_code = open(wb_path, encoding="utf-8").read() if os.path.isfile(wb_path) else ""
-            bb_code = open(bb_path, encoding="utf-8").read() if os.path.isfile(bb_path) else ""
-            for fn in functions:
+        if ingest_golden and resolved and fn_result.get("test_code"):
+            try:
                 ingest_example(
                     fn={"name": fn["name"], "source": fn["source"], "file_path": fn.get("file_path", "")},
                     repo_url=f"quixbugs:{program}",
-                    whitebox_code=wb_code,
-                    blackbox_code=bb_code,
-                    passed=tests_passed_buggy,
-                    failed=tests_failed_buggy,
-                    coverage_pct=None,
+                    test_code=fn_result["test_code"],
+                    passed=fn_result.get("tests_passed", 0),
+                    failed=fn_result.get("tests_failed", 0),
+                    coverage_pct=fn_result.get("coverage_pct"),
                 )
                 ingested = True
+            except Exception as e:
+                print(f"  [rag] ingest failed: {e}")
 
         _persist_benchmark_run(
             benchmark_id=program,
             repo_url=f"quixbugs:{program}",
             cfg=cfg,
             use_rag=use_rag,
-            functions=functions,
-            instance_output=instance_output,
-            run_result=run_result,
-            metrics={
-                "patch_applied": patch_applied,
-                "f2p": f_to_p, "f2f": f_to_f, "p2f": p_to_f, "p2p": p_to_p,
-                "detected": detected, "resolved": resolved,
-                "golden": golden, "elapsed_seconds": elapsed,
-            },
+            fn=fn,
+            fn_result=fn_result,
+            elapsed=elapsed,
         )
 
-        print(f"  → tests={tests_run}  detected={detected}  F→P={f_to_p}  F→F={f_to_f}  P→F={p_to_f}  "
-              f"resolved={resolved}  ingested={ingested}  {elapsed}s")
+        print(f"  → detected={detected}  F→P={f2p}  F→F={f2f}  P→F={p2f}  "
+              f"resolved={resolved}  ingested={ingested}  {round(elapsed, 1)}s")
         return {
-            "instance_id": instance_id, "project": "quixbugs", "program": program, "status": "ok",
-            "tests_run": tests_run, "tests_passed": tests_passed_buggy,
-            "tests_failed": tests_failed_buggy, "tests_errored": tests_errored,
-            "patch_applied": patch_applied,
-            "f2p": f_to_p, "f2f": f_to_f, "p2f": p_to_f, "p2p": p_to_p,
-            "detected": detected, "resolved": resolved,
-            "golden": golden, "ingested": ingested,
-            "elapsed_seconds": elapsed,
+            "instance_id": instance_id, "program": program, "status": "ok",
+            "tests_run": fn_result.get("tests_run", 0),
+            "tests_passed": fn_result.get("tests_passed", 0),
+            "tests_failed": fn_result.get("tests_failed", 0),
+            **metrics,
+            "ingested": ingested,
+            "elapsed_seconds": round(elapsed, 1),
         }
     except Exception as e:
         print(f"  ERROR: {type(e).__name__}: {e}")
-        return {"instance_id": instance_id, "project": "quixbugs", "program": program,
-                "status": "error", "error": str(e)}
+        return {"instance_id": instance_id, "status": "error", "error": str(e)}
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
@@ -251,13 +219,11 @@ def run_quixbugs(
     use_rag: bool = True,
     output_dir: str = "./eval_output",
 ) -> list[dict]:
-    """Run the QuixBugs benchmark. phase ∈ {'populate', 'measure'}.
-
-    - populate: generate tests for the populate split, ingest golden examples into Chroma.
-    - measure:  generate tests for the measure split, record SWT metrics to DB.
-    """
+    """Run the QuixBugs benchmark. phase ∈ {'populate', 'measure'}."""
     assert phase in ("populate", "measure"), f"phase must be populate|measure, got {phase!r}"
-    timeout = PRESETS.get(preset, PRESETS["default"])["timeout"]
+    preset_cfg = PRESETS.get(preset, PRESETS["default"])
+    timeout = preset_cfg["timeout"]
+    max_turns = preset_cfg["max_turns"]
 
     qb_tmp = tempfile.mkdtemp()
     try:
@@ -280,9 +246,9 @@ def run_quixbugs(
         os.makedirs(run_dir, exist_ok=True)
 
         print(f"\n{phase.upper()}  —  {len(programs)} program(s)  "
-              f"[{cfg.get('provider')}/{cfg.get('model') or 'default'}]\n")
+              f"[{cfg.get('provider')}/{cfg.get('model') or 'default'}]  turns<={max_turns}\n")
         return [
-            _run_one_quixbug(prog, qb_tmp, run_dir, cfg, timeout,
+            _run_one_quixbug(prog, qb_tmp, run_dir, cfg, timeout, max_turns,
                              use_rag=use_rag_eff, ingest_golden=ingest_golden)
             for prog in programs
         ]

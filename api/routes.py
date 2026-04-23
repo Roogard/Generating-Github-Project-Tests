@@ -216,8 +216,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
                 "tests_passed": fn.tests_passed,
                 "tests_failed": fn.tests_failed,
                 "coverage_pct": fn.coverage_pct,
-                "whitebox_code": fn.whitebox_code,
-                "blackbox_code": fn.blackbox_code,
+                "test_code": fn.test_code,
             }
             for fn in run.functions
         ],
