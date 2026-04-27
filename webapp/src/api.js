@@ -16,7 +16,8 @@ async function req(method, path, body) {
   return res.json()
 }
 
-// Runs
+// Runs — single endpoint, dispatched by `source` field on the body.
+// Body shape: { source: 'repo' | 'swtbench', ...source-specific fields }
 export const getRuns = (status) => req('GET', `/runs/${status ? `?status=${status}` : ''}`)
 export const getRun = (id) => req('GET', `/runs/${id}`)
 export const getRunStatus = (id) => req('GET', `/runs/${id}/status`)
@@ -24,15 +25,5 @@ export const createRun = (body) => req('POST', '/runs/', body)
 export const deleteRun = (id) => req('DELETE', `/runs/${id}`)
 export const downloadRun = (id) => window.open(BASE + `/runs/${id}/download`, '_blank')
 
-// Benchmark
-export const createBenchmark = (body) => req('POST', '/runs/benchmark', body)
-
-// VectorDB (read-only browser + similarity search)
-export const getVectorStats = () => req('GET', '/vectordb/stats')
-export const vectorSearch = (query, n) => req('POST', '/vectordb/search', { query, n })
-export const getVectorExamples = (page = 1, limit = 20) =>
-  req('GET', `/vectordb/examples?page=${page}&limit=${limit}`)
-
 // Analytics
-export const getAnalyticsSummary = (filter = 'benchmark') =>
-  req('GET', `/analytics/summary?filter=${filter}`)
+export const getAnalyticsSummary = () => req('GET', '/analytics/summary')

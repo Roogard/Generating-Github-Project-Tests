@@ -5,6 +5,7 @@ provided for script / background-task callers that want one.
 """
 from __future__ import annotations
 
+import json
 from contextlib import contextmanager
 from typing import Iterator
 
@@ -69,19 +70,20 @@ def delete_run(db: Session, run_id: int) -> bool:
     return True
 
 
-
-
 def save_function_result(db: Session, run_id: int, result: dict) -> Function:
-    """Persist one agent run's output: single test file, pass/fail counts, coverage."""
+    """Persist one harness run's output: test file + pass/fail counts + per-skill history."""
+    history = result.get("history") or []
+    try:
+        history_json = json.dumps(history, default=str) if history else None
+    except (TypeError, ValueError):
+        history_json = None
     fn = Function(
         run_id=run_id,
         name=result["fn_name"],
-        file_path=result.get("fn_file", ""),
-        source=result.get("fn_source", ""),
         test_code=result.get("test_code") or None,
         tests_passed=result.get("tests_passed", 0),
         tests_failed=result.get("tests_failed", 0),
-        coverage_pct=result.get("coverage_pct"),
+        history_json=history_json,
     )
     db.add(fn)
     db.flush()
@@ -93,52 +95,15 @@ def finalize_run(db: Session, run_id: int) -> Run:
     agg = db.query(
         func.sum(Function.tests_passed),
         func.sum(Function.tests_failed),
-        func.avg(Function.coverage_pct),
     ).filter(Function.run_id == run_id).first()
 
     run.tests_passed = int(agg[0] or 0)
     run.tests_failed = int(agg[1] or 0)
     run.tests_run = run.tests_passed + run.tests_failed
-    run.avg_coverage_pct = round(float(agg[2]), 2) if agg[2] else None
     return run
 
 
-# ── quality scoring (for promote-to-memory) ────────────────────────────────
-
-def score_function(
-    fn: Function,
-    *,
-    min_passed: int = 0,
-    min_pass_rate: float = 0.0,
-    min_coverage: float | None = None,
-) -> tuple[int, int, float | None, str | None]:
-    """Gate a function's wb+bb pair against quality floors.
-
-    Returns (passed, failed, coverage_pct, skip_reason). skip_reason is None
-    when the pair meets every floor.
-    """
-    if not fn.source or not fn.source.strip():
-        return 0, 0, None, "no_source"
-    if not fn.test_code:
-        return 0, 0, None, "no_tests"
-    passed = fn.tests_passed or 0
-    failed = fn.tests_failed or 0
-    if passed < min_passed:
-        return passed, failed, fn.coverage_pct, "below_min_passed"
-    total = passed + failed
-    pass_rate = passed / total if total else 0.0
-    if pass_rate < min_pass_rate:
-        return passed, failed, fn.coverage_pct, "below_min_pass_rate"
-    if min_coverage is not None and (fn.coverage_pct is None or fn.coverage_pct < min_coverage):
-        return passed, failed, fn.coverage_pct, "below_min_coverage"
-    return passed, failed, fn.coverage_pct, None
-
-
 # ── analytics summary ──────────────────────────────────────────────────────
-
-BENCH_MODES = ("quixbugs",)
-USER_MODES = ("single", "project")
-
 
 def _bench_bucket(rows) -> dict:
     """Aggregate a list of Run rows into SWT-bench summary numbers."""
@@ -161,128 +126,61 @@ def _bench_bucket(rows) -> dict:
     }
 
 
-def _user_bucket(rows) -> dict:
-    total = len(rows)
+def summary_stats(db: Session) -> dict:
+    """SWT-Bench analytics dashboard. Only benchmark runs are summarized —
+    user (`mode='repo'`) runs have no oracle grade and aren't aggregable."""
+    bench_runs = (
+        db.query(Run)
+        .filter(Run.status == RunStatus.DONE, Run.mode == "swtbench")
+        .all()
+    )
+
+    def _project_name(repo_url: str) -> str:
+        if repo_url.startswith("swtbench:"):
+            return f"swtbench/{repo_url.split(':', 1)[1]}"
+        return repo_url
+
+    by_project: dict[str, list] = {}
+    for r in bench_runs:
+        by_project.setdefault(_project_name(r.repo_url), []).append(r)
+
+    by_provider: dict[str, list] = {}
+    for r in bench_runs:
+        by_provider.setdefault(r.provider or "unknown", []).append(r)
+
+    recent = (
+        db.query(Run)
+        .filter(Run.status == RunStatus.DONE, Run.mode == "swtbench")
+        .order_by(Run.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
     return {
-        "runs": total,
-        "tests_passed": sum(r.tests_passed or 0 for r in rows),
-        "tests_failed": sum(r.tests_failed or 0 for r in rows),
-        "avg_coverage": round(
-            sum(r.avg_coverage_pct or 0 for r in rows) / total, 1
-        ) if total else 0.0,
-    }
-
-
-def summary_stats(db: Session, mode_filter: str = "benchmark") -> dict:
-    """Analytics dashboard. mode_filter: 'benchmark' | 'user' | 'both'."""
-
-    def _bench_section():
-        bench_runs = (
-            db.query(Run)
-            .filter(Run.status == RunStatus.DONE, Run.mode.in_(BENCH_MODES))
-            .all()
-        )
-
-        def _project_name(repo_url: str) -> str:
-            if repo_url.startswith("quixbugs:"):
-                return f"quixbugs/{repo_url.split(':', 1)[1]}"
-            return repo_url
-
-        by_project: dict[str, list] = {}
-        for r in bench_runs:
-            by_project.setdefault(_project_name(r.repo_url), []).append(r)
-
-        by_provider: dict[str, list] = {}
-        for r in bench_runs:
-            by_provider.setdefault(r.provider or "unknown", []).append(r)
-
-        recent = (
-            db.query(Run)
-            .filter(Run.status == RunStatus.DONE, Run.mode.in_(BENCH_MODES))
-            .order_by(Run.created_at.desc())
-            .limit(20)
-            .all()
-        )
-
-        rag_count = 0
-        try:
-            from src.vectordb import get_collection
-            rag_count = get_collection().count()
-        except Exception:
-            pass
-
-        return {
-            "overall": _bench_bucket(bench_runs),
-            "baseline": _bench_bucket([r for r in bench_runs if not r.use_rag]),
-            "with_rag": _bench_bucket([r for r in bench_runs if r.use_rag]),
-            "by_project": [
-                {"project": name, **_bench_bucket(rows)}
-                for name, rows in sorted(by_project.items())
-            ],
-            "by_provider": [
-                {"provider": name, **_bench_bucket(rows)}
-                for name, rows in sorted(by_provider.items())
-            ],
-            "rag_examples": rag_count,
-            "recent_runs": [
-                {
-                    "id": r.id,
-                    "repo_url": r.repo_url,
-                    "mode": r.mode,
-                    "benchmark_id": r.benchmark_id,
-                    "provider": r.provider,
-                    "use_rag": r.use_rag,
-                    "detected": r.detected,
-                    "resolved": r.resolved,
-                    "f2p": r.f2p, "f2f": r.f2f, "p2f": r.p2f, "p2p": r.p2p,
-                    "tests_run": r.tests_run,
-                    "elapsed_seconds": r.elapsed_seconds,
-                    "created_at": r.created_at,
-                    "finished_at": r.finished_at,
-                }
-                for r in recent
-            ],
-        }
-
-    def _user_section():
-        user_runs = (
-            db.query(Run)
-            .filter(Run.status == RunStatus.DONE, Run.mode.in_(USER_MODES))
-            .all()
-        )
-        recent = (
-            db.query(Run)
-            .filter(Run.status == RunStatus.DONE, Run.mode.in_(USER_MODES))
-            .order_by(Run.created_at.desc())
-            .limit(20)
-            .all()
-        )
-        return {
-            "summary": _user_bucket(user_runs),
-            "recent_runs": [
-                {
-                    "id": r.id,
-                    "repo_url": r.repo_url,
-                    "mode": r.mode,
-                    "provider": r.provider,
-                    "use_rag": r.use_rag,
-                    "tests_passed": r.tests_passed,
-                    "tests_failed": r.tests_failed,
-                    "avg_coverage_pct": r.avg_coverage_pct,
-                    "created_at": r.created_at,
-                    "finished_at": r.finished_at,
-                }
-                for r in recent
-            ],
-        }
-
-    if mode_filter == "benchmark":
-        return {"mode": "benchmark", **_bench_section()}
-    if mode_filter == "user":
-        return {"mode": "user", **_user_section()}
-    # both
-    return {
-        "mode": "both",
-        "benchmark": _bench_section(),
-        "user": _user_section(),
+        "overall": _bench_bucket(bench_runs),
+        "by_project": [
+            {"project": name, **_bench_bucket(rows)}
+            for name, rows in sorted(by_project.items())
+        ],
+        "by_provider": [
+            {"provider": name, **_bench_bucket(rows)}
+            for name, rows in sorted(by_provider.items())
+        ],
+        "recent_runs": [
+            {
+                "id": r.id,
+                "repo_url": r.repo_url,
+                "mode": r.mode,
+                "benchmark_id": r.benchmark_id,
+                "provider": r.provider,
+                "detected": r.detected,
+                "resolved": r.resolved,
+                "f2p": r.f2p, "f2f": r.f2f, "p2f": r.p2f, "p2p": r.p2p,
+                "tests_run": r.tests_run,
+                "elapsed_seconds": r.elapsed_seconds,
+                "created_at": r.created_at,
+                "finished_at": r.finished_at,
+            }
+            for r in recent
+        ],
     }

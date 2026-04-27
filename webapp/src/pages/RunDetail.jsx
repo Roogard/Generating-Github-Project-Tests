@@ -86,7 +86,6 @@ function FunctionCard({ fn }) {
       <div className="accordion-header" onClick={() => setOpen(o => !o)}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontFamily: 'var(--mono)', fontWeight: 600 }}>{fn.name}</span>
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{fn.file_path}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {fn.tests_passed > 0 && <span className="chip chip-pass">✓ {fn.tests_passed}</span>}
@@ -98,12 +97,6 @@ function FunctionCard({ fn }) {
       {open && (
         <div className="accordion-body">
           <div style={{ display: 'flex', gap: 16, marginBottom: 16 }}>
-            <div className="stat-card" style={{ minWidth: 100 }}>
-              <div className="stat-label">Coverage</div>
-              <div className="stat-value" style={{ fontSize: 18 }}>
-                {fn.coverage_pct != null ? `${Math.round(fn.coverage_pct)}%` : '—'}
-              </div>
-            </div>
             <div className="stat-card" style={{ minWidth: 100 }}>
               <div className="stat-label">Passed</div>
               <div className="stat-value" style={{ fontSize: 18, color: 'var(--green-fg)' }}>{fn.tests_passed}</div>
@@ -188,20 +181,12 @@ export default function RunDetail() {
       {run.status === 'done' && (
         <div className="stat-row">
           <div className="stat-card">
-            <div className="stat-label">Functions</div>
-            <div className="stat-value">{run.functions.length}</div>
-          </div>
-          <div className="stat-card">
             <div className="stat-label">Tests Passed</div>
             <div className="stat-value" style={{ color: 'var(--green-fg)' }}>{run.tests_passed}</div>
           </div>
           <div className="stat-card">
             <div className="stat-label">Tests Failed</div>
             <div className="stat-value" style={{ color: run.tests_failed > 0 ? 'var(--red-fg)' : 'var(--green-fg)' }}>{run.tests_failed}</div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-label">Avg Coverage</div>
-            <div className="stat-value">{run.avg_coverage_pct != null ? `${Math.round(run.avg_coverage_pct)}%` : '—'}</div>
           </div>
         </div>
       )}

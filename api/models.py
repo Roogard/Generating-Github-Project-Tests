@@ -13,9 +13,11 @@ class Run(Base):
 
     # Identity
     repo_url: Mapped[str] = mapped_column(String, nullable=False)
-    function_name: Mapped[str] = mapped_column(String, default="")
-    mode: Mapped[str] = mapped_column(String, default="single")  # single | project | quixbugs
+    mode: Mapped[str] = mapped_column(String, default="repo")  # repo | swtbench
     benchmark_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Populated only for benchmark runs: "swtbench_lite" | "swtbench_verified".
+    # Lets analytics split runs by dataset without parsing repo_url.
+    dataset: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Lifecycle
     status: Mapped[str] = mapped_column(String, default=RunStatus.PENDING)
@@ -31,16 +33,14 @@ class Run(Base):
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     preset: Mapped[str | None] = mapped_column(String, nullable=True)
-    use_rag: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
     # Aggregate test outcomes
     tests_run: Mapped[int] = mapped_column(Integer, default=0)
     tests_passed: Mapped[int] = mapped_column(Integer, default=0)
     tests_failed: Mapped[int] = mapped_column(Integer, default=0)
     tests_errored: Mapped[int] = mapped_column(Integer, default=0)
-    avg_coverage_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    # SWT-bench oracle transitions (0 when mode is single/project)
+    # SWT-bench oracle transitions (0 when mode='repo')
     f2p: Mapped[int] = mapped_column(Integer, default=0)
     f2f: Mapped[int] = mapped_column(Integer, default=0)
     p2f: Mapped[int] = mapped_column(Integer, default=0)
@@ -48,10 +48,6 @@ class Run(Base):
     patch_applied: Mapped[bool] = mapped_column(Boolean, default=False)
     detected: Mapped[bool] = mapped_column(Boolean, default=False)
     resolved: Mapped[bool] = mapped_column(Boolean, default=False)
-    golden: Mapped[bool] = mapped_column(Boolean, default=False)
-
-    # Promotion to vector memory
-    promoted_to_memory_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     functions: Mapped[list["Function"]] = relationship(
         "Function", back_populates="run", cascade="all, delete-orphan"
@@ -66,15 +62,15 @@ class Function(Base):
         Integer, ForeignKey("runs.id", ondelete="CASCADE"), nullable=False
     )
     name: Mapped[str] = mapped_column(String, nullable=False)
-    file_path: Mapped[str] = mapped_column(String, nullable=False)
-    source: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # The agent-produced test file
+    # The harness-produced test file
     test_code: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Aggregate outcomes
     tests_passed: Mapped[int] = mapped_column(Integer, default=0)
     tests_failed: Mapped[int] = mapped_column(Integer, default=0)
-    coverage_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Per-skill log: JSON list of {skill, lines, ...}.
+    history_json: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     run: Mapped["Run"] = relationship("Run", back_populates="functions")

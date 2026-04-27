@@ -1,8 +1,8 @@
 """LLM provider plumbing.
 
 `build_config` and `get_llm` are the only public API. Test-generation logic
-lives in `src/agent/` — the LLM is used there via `get_llm(cfg).bind_tools(...)`
-against a TestGenEnv instance.
+lives in `src/skills/` — each skill calls `get_llm(cfg).invoke(messages)` once
+per invocation (no tool binding; the harness owns dispatch).
 """
 import os
 

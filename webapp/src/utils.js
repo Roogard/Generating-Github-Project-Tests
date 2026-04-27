@@ -1,1 +1,1 @@
-export const isBenchmarkMode = (mode) => mode === 'quixbugs'
+export const isBenchmarkMode = (mode) => mode === 'swtbench'

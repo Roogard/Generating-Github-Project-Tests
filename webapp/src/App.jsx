@@ -2,7 +2,6 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import RunsList from './pages/RunsList.jsx'
 import RunDetail from './pages/RunDetail.jsx'
 import Analytics from './pages/Analytics.jsx'
-import VectorDB from './pages/VectorDB.jsx'
 import Benchmark from './pages/Benchmark.jsx'
 
 function Nav() {
@@ -16,7 +15,6 @@ function Nav() {
       <NavLink className={link} to="/" end>Runs</NavLink>
       <NavLink className={link} to="/benchmark">Benchmark</NavLink>
       <NavLink className={link} to="/analytics">Analytics</NavLink>
-      <NavLink className={link} to="/vectordb">Vector DB</NavLink>
     </nav>
   )
 }
@@ -30,7 +28,6 @@ export default function App() {
         <Route path="/runs/:id" element={<RunDetail />} />
         <Route path="/benchmark" element={<Benchmark />} />
         <Route path="/analytics" element={<Analytics />} />
-        <Route path="/vectordb" element={<VectorDB />} />
       </Routes>
     </BrowserRouter>
   )

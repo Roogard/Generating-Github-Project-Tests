@@ -7,5 +7,3 @@ services:
     envVars:
       - key: DATABASE_URL
         value: sqlite:///./ggpt.db
-      - key: CHROMA_PATH
-        value: ./chroma_db
