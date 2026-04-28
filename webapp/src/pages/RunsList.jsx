@@ -69,14 +69,12 @@ export default function RunsList() {
   // ── new run form ──
   const [form, setForm] = useState({
     repo_url: '',
+    issue_text: '',
     api_key: '',
     provider: 'deepseek',
     model: '',
     preset: 'default',
-    function_name: '',
-    function_limit: '',
     install_deps: true,
-    use_rag: true,
   })
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
@@ -86,19 +84,19 @@ export default function RunsList() {
   const submit = async e => {
     e.preventDefault()
     if (!form.repo_url.trim()) return setFormError('Repository URL is required')
+    if (!form.issue_text.trim()) return setFormError('Issue text is required — the agent reads it to know what bug to test for')
     setFormError('')
     setSubmitting(true)
     try {
       const res = await createRun({
+        source: 'repo',
         repo_url: form.repo_url.trim(),
+        issue_text: form.issue_text.trim(),
         api_key: form.api_key.trim(),
         provider: form.provider,
         model: form.model.trim() || null,
         preset: form.preset,
-        function_name: form.function_name.trim(),
         install_deps: form.install_deps,
-        use_rag: form.use_rag,
-        function_limit: form.function_limit ? parseInt(form.function_limit) : null,
       })
       addSessionId(res.id)
       nav(`/runs/${res.id}`)
@@ -125,15 +123,13 @@ export default function RunsList() {
 
       {runs.length > 0 && (
         <div className="card" style={{ padding: 0, marginBottom: 40, overflowX: 'auto' }}>
-          <table style={{ minWidth: 1040 }}>
+          <table style={{ minWidth: 760 }}>
             <thead>
               <tr>
                 <th>ID</th>
                 <th>Repository</th>
                 <th>Mode</th>
                 <th>Status</th>
-                <th>Progress</th>
-                <th>Functions</th>
                 <th>Pass / Fail</th>
                 <th>Outcome</th>
                 <th>Created</th>
@@ -154,17 +150,6 @@ export default function RunsList() {
                     {r.mode}{r.benchmark_id ? `:${r.benchmark_id}` : ''}
                   </td>
                   <td>{statusBadge(r.status)}</td>
-                  <td style={{ width: 140 }}>
-                    {r.status === 'running' && r.progress_total > 0 ? (
-                      <div>
-                        <div className="progress-bar-wrap">
-                          <div className="progress-bar-fill" style={{ width: `${(r.progress_current / r.progress_total) * 100}%` }} />
-                        </div>
-                        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{r.progress_current}/{r.progress_total}</span>
-                      </div>
-                    ) : '—'}
-                  </td>
-                  <td>{r.function_count ?? '—'}</td>
                   <td style={{ fontSize: 12 }}>
                     {(r.tests_passed + r.tests_failed) > 0
                       ? <><span style={{ color: 'var(--green-fg)' }}>{r.tests_passed}</span> / <span style={{ color: r.tests_failed > 0 ? 'var(--red-fg)' : 'var(--text-2)' }}>{r.tests_failed}</span></>
@@ -194,7 +179,7 @@ export default function RunsList() {
 
       <form onSubmit={submit}>
         <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginBottom: 16, fontSize: 15 }}>Repository</h3>
+          <h3 style={{ marginBottom: 16, fontSize: 15 }}>Repository &amp; Issue</h3>
           <div className="form-group">
             <label>GitHub Repository URL *</label>
             <input
@@ -205,31 +190,26 @@ export default function RunsList() {
             />
           </div>
           <div className="form-group">
+            <label>Issue *</label>
+            <textarea
+              value={form.issue_text}
+              onChange={e => set('issue_text', e.target.value)}
+              placeholder="Paste the GitHub issue text — describe the bug, expected vs. actual behavior, reproducer steps. The agent reads this to know what to test for."
+              rows={8}
+              required
+              style={{ fontFamily: 'inherit', resize: 'vertical', minHeight: 140 }}
+            />
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
+              The agent localizes the relevant code itself by exploring the repo with read_file / search_in_repo tools. You don't need to point at a specific function.
+            </div>
+          </div>
+          <div className="form-group">
             <label>API Key (passed to LLM provider)</label>
             <input
               type="password"
               value={form.api_key}
               onChange={e => set('api_key', e.target.value)}
             />
-          </div>
-          <div className="grid-2">
-            <div className="form-group">
-              <label>Target Function (leave blank for all)</label>
-              <input
-                type="text"
-                value={form.function_name}
-                onChange={e => set('function_name', e.target.value)}
-              />
-            </div>
-            <div className="form-group">
-              <label>Function Limit (whole-project mode)</label>
-              <input
-                type="number"
-                min="1"
-                value={form.function_limit}
-                onChange={e => set('function_limit', e.target.value)}
-              />
-            </div>
           </div>
         </div>
 
@@ -265,13 +245,6 @@ export default function RunsList() {
             <input type="checkbox" id="install_deps" checked={form.install_deps} onChange={e => set('install_deps', e.target.checked)} />
             <div>
               <div className="toggle-label">Install repo dependencies</div>
-            </div>
-          </div>
-          <div className="toggle-row" style={{ marginTop: 10 }}>
-            <input type="checkbox" id="use_rag" checked={form.use_rag} onChange={e => set('use_rag', e.target.checked)} />
-            <div>
-              <div className="toggle-label">Use RAG memory</div>
-              <div className="toggle-hint">Retrieve similar examples from ChromaDB during generation</div>
             </div>
           </div>
         </div>

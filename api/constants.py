@@ -1,4 +1,4 @@
-"""Status-string constants shared across models, routes, and pipeline persistence."""
+"""Shared string constants."""
 from enum import StrEnum
 
 
@@ -7,8 +7,3 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     DONE    = "done"
     ERROR   = "error"
-
-
-class TestType(StrEnum):
-    WHITEBOX = "whitebox"
-    BLACKBOX = "blackbox"

@@ -9,7 +9,6 @@ services:
       - .env
     environment:
       - DATABASE_URL=sqlite:////data/ggpt.db
-      - CHROMA_PATH=/data/chroma_db
 
 volumes:
   ggpt_data:

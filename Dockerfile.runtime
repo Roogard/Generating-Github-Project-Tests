@@ -1,0 +1,33 @@
+# GGPT test-execution runtime.
+#
+# Hosts pytest, coverage, and uv inside a clean Linux env so each pipeline
+# run gets a deterministic place to install the target repo and exercise
+# its tests. Mounted with the run's tempdir at /work; commands cd into
+# /work/repo and use /work/.venv/bin/python.
+#
+# Build:   docker build -f Dockerfile.runtime -t ggpt-runtime .
+# Smoke:   docker run --rm ggpt-runtime python --version
+FROM python:3.12-slim
+
+# git for `git apply` (oracle's gold-patch flip) and clone-side ops if needed.
+# build-essential covers most C-extension wheel compiles for the SWT-Bench tail.
+# libxml2-dev / libxslt1-dev / libssl-dev / libffi-dev cover the most common
+# native-extension cases (lxml, cryptography, etc.) without bloating too much.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git \
+        build-essential \
+        libxml2-dev \
+        libxslt1-dev \
+        libssl-dev \
+        libffi-dev \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# uv: per-run venvs are built inside the mounted volume so they persist across
+# stateless `docker run --rm` invocations. Pinned by major version; let pip
+# pull the latest patch on image build.
+RUN pip install --no-cache-dir 'uv>=0.4'
+
+WORKDIR /work
+
+# No CMD — the harness drives invocations via `docker run --rm <image> <cmd>`.
