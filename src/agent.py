@@ -52,7 +52,6 @@ def run_agent(task: AgentTask) -> AgentResult:
             max_llm_calls=task.max_llm_calls,
             agentic_turn_cap=task.agentic_turn_cap,
             per_test_timeout=task.per_test_timeout,
-            examples_dir=task.examples_dir,
         )
     except Exception as e:
         print(f"  ERROR in harness: {type(e).__name__}: {e}")

@@ -23,7 +23,7 @@ from pathlib import Path
 
 from langchain_core.tools import StructuredTool
 
-from src.harness.context import HarnessContext
+from src.harness import HarnessContext
 
 
 _DEFAULT_WINDOW = 100

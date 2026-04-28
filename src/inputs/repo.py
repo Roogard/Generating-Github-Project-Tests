@@ -12,14 +12,18 @@ Adapter responsibilities:
 from __future__ import annotations
 
 import os
+import subprocess
 from typing import Iterator
 
 from dotenv import load_dotenv
 
 from src.inputs.base import InputAdapter, PRESETS, force_rmtree
-from src.repo_utils import clone_repo
-from src.runtime import build_runtime
+from src.runtime.factory import build_runtime
 from src.types import AgentTask, RunBatch
+
+
+def _clone_repo(url: str, target_dir: str) -> None:
+    subprocess.run(["git", "clone", "--depth=1", url, target_dir], check=True)
 
 
 load_dotenv()
@@ -101,7 +105,6 @@ class RepoAdapter(InputAdapter):
         hints_text: str = "",
         install_deps: bool = True,
         output_dir: str = "eval_output",
-        examples_dir=None,
     ):
         if not issue_text or not issue_text.strip():
             raise ValueError("RepoAdapter requires non-empty issue_text — the agent is issue-driven")
@@ -114,7 +117,6 @@ class RepoAdapter(InputAdapter):
         self.preset = preset
         self.install_deps = install_deps
         self.output_dir = output_dir
-        self.examples_dir = examples_dir
 
     def iter_batches(self) -> Iterator[RunBatch]:
         project_name = self.repo_url.rstrip("/").split("/")[-1].replace(".git", "")
@@ -126,7 +128,7 @@ class RepoAdapter(InputAdapter):
         # that defeat ignore_errors=True. force_rmtree chmods them out.
         force_rmtree(repo_dir)
         print(f"\nCloning {self.repo_url}...")
-        clone_repo(self.repo_url, repo_dir)
+        _clone_repo(self.repo_url, repo_dir)
 
         print("Building runtime ...")
         runtime, install_result = _setup_runtime(
@@ -165,6 +167,5 @@ class RepoAdapter(InputAdapter):
             max_llm_calls=self.preset_cfg["max_llm_calls"],
             agentic_turn_cap=self.preset_cfg.get("agentic_turn_cap", 6),
             per_test_timeout=self.preset_cfg.get("per_test_timeout"),
-            examples_dir=self.examples_dir,
         )
         yield RunBatch(run_metadata=run_metadata, tasks=[task])

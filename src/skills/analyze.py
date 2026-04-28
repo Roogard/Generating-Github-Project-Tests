@@ -6,7 +6,7 @@ and what F→F traps to avoid.
 """
 from __future__ import annotations
 
-from src.harness.context import HarnessContext
+from src.harness import HarnessContext
 from src.skills.base import Skill, format_intent_section
 
 

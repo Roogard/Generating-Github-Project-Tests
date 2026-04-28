@@ -1,9 +1,17 @@
 from datetime import datetime
+from enum import StrEnum
+
 from sqlalchemy import Integer, String, Float, Boolean, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from api.db import Base
-from api.constants import RunStatus
+
+
+class RunStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    DONE    = "done"
+    ERROR   = "error"
 
 
 class Run(Base):

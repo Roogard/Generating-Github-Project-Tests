@@ -38,8 +38,10 @@ ONLY infrastructure problems:
   message lines up with the issue's expected behavior are GOOD; never
   weaken or delete them.
 
-- **Don't rewrite from scratch.** Preserve every test that isn't in the
-  failure list. Only touch the broken ones.
+- **Don't rewrite from scratch.** The test file contains exactly one
+  `def test_*` function. If its assertion is doing the right thing but
+  the surrounding setup is broken, fix the setup — don't replace the
+  whole test.
 
 - **Don't reduce assertion strength.** Don't downgrade a Tier 1 assertion
   to a Tier 3 one to "make it pass." If a test's value was wrong, fix the

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from api.constants import RunStatus
+from api.models import RunStatus
 from api.store import (
     create_run as _store_create_run,
     finalize_run as _store_finalize_run,

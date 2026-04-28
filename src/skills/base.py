@@ -12,7 +12,7 @@ from pathlib import Path
 
 from langchain_core.messages import HumanMessage
 
-from src.harness.context import BudgetExhausted, HarnessContext
+from src.harness import BudgetExhausted, HarnessContext
 from src.llm import cached_system_message, get_llm
 
 

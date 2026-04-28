@@ -65,11 +65,11 @@ src/
   agent.py           run_agent(task) — single entrypoint, dispatches to harness
   runner.py          Runs adapters; persists Run rows; grades post-hoc
   llm.py             Provider plumbing (build_config, get_llm)
-  repo_utils.py      Git clone helper
   test_runner.py     pytest runner (JSON report + per-test isolation)
-  oracle.py          SWT-bench classifier + buggy↔fixed transition runner (post-hoc only)
+  oracle.py          SWT-bench classifier + buggy↔fixed transitions + grade_with_oracle (post-hoc only)
   persist.py         Single persistence path (Run + Function rows)
   types.py           AgentTask, AgentResult, OracleGrade, RunBatch
+  harness.py         HarnessContext + Feedback + run_harness (Analyze → Generate → Improve → Finalize)
   inputs/
     base.py          InputAdapter ABC + PRESETS
     repo.py          RepoAdapter — (URL, issue_text) → AgentTask
@@ -80,11 +80,6 @@ src/
     docker.py        `docker run --rm` against ggpt-runtime image
     swtbench.py      Per-instance official sweb image with /testbed preamble
     factory.py       Auto-selects via GGPT_RUNTIME env var
-  harness/
-    orchestrator.py  Analyze → Generate → maybe Improve → Finalize
-    context.py       HarnessContext — per-task state, write_test_file
-    feedback.py      Pytest result → Feedback (infrastructure-problem detection)
-    finalize.py      Persist-ready dict from final Feedback
   skills/
     base.py          Skill base class — prompt loading, single LLM call
     agentic.py       Reusable tool-using LLM loop (used by Generate + Improve)
@@ -93,17 +88,13 @@ src/
     generate.py      GenerateSkill — agentic; explores repo, writes tests
     improve.py       ImproveSkill — fallback for collection/setup failures
     prompts/         _shared.md + analyze.md + generate.md + improve.md
-  graders/
-    oracle.py        grade_with_oracle — wraps run_oracle for post-hoc grading
 
 api/
   app.py             FastAPI app + lifespan + SPA mount
   db.py              SQLite via SQLAlchemy
-  models.py          ORM: Run, Function
-  routes.py          REST: /api/runs/*
-  browser_routes.py  REST: /api/analytics/summary
+  models.py          ORM: Run, Function + RunStatus StrEnum
+  routes.py          REST: /api/runs/* + /api/analytics/summary
   store.py           Thin DAL + summary_stats
-  constants.py       StrEnum: RunStatus
 
 webapp/              React + Vite dashboard — the only user-facing entry point
   src/pages/         RunsList, RunDetail, Benchmark, Analytics

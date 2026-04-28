@@ -11,8 +11,7 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 from api.db import init_db
-from api.routes import router
-from api.browser_routes import router as browser_router
+from api.routes import router, analytics_router
 
 
 @asynccontextmanager
@@ -26,7 +25,7 @@ app = FastAPI(title="GGPT API", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 app.include_router(router)
-app.include_router(browser_router)
+app.include_router(analytics_router)
 
 # Serve React build in production
 _dist = os.path.join(os.path.dirname(__file__), "..", "webapp", "dist")

@@ -12,7 +12,6 @@ Layer guide:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -51,7 +50,6 @@ class AgentTask:
     max_llm_calls: int = 8
     agentic_turn_cap: int = 6
     per_test_timeout: int | None = None
-    examples_dir: Path | None = None
 
 
 @dataclass

@@ -12,9 +12,8 @@ from typing import Iterator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from api.constants import RunStatus
 from api.db import SessionLocal
-from api.models import Function, Run
+from api.models import Function, Run, RunStatus
 
 
 # ── session helper ──────────────────────────────────────────────────────────

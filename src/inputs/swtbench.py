@@ -20,7 +20,7 @@ import tempfile
 from typing import Iterator
 
 from src.inputs.base import InputAdapter, PRESETS
-from src.runtime import SwtBenchRuntime
+from src.runtime.swtbench import SwtBenchRuntime
 from src.types import AgentTask, RunBatch
 
 
@@ -90,7 +90,6 @@ class SwtBenchAdapter(InputAdapter):
         instance_limit: int | None = None,
         instance_ids: list[str] | None = None,
         use_official_images: bool = True,
-        examples_dir=None,
     ):
         if dataset not in _HF_DATASETS:
             raise ValueError(f"Unknown dataset: {dataset}")
@@ -101,7 +100,6 @@ class SwtBenchAdapter(InputAdapter):
         self.instance_limit = instance_limit
         self.instance_ids = set(instance_ids) if instance_ids else None
         self.use_official_images = use_official_images
-        self.examples_dir = examples_dir
 
     def iter_batches(self) -> Iterator[RunBatch]:
         print(f"\n[swtbench] loading {_HF_DATASETS[self.dataset]} split=test ...")
@@ -199,7 +197,6 @@ class SwtBenchAdapter(InputAdapter):
                 max_llm_calls=self.preset_cfg["max_llm_calls"],
                 agentic_turn_cap=self.preset_cfg.get("agentic_turn_cap", 6),
                 per_test_timeout=self.preset_cfg.get("per_test_timeout"),
-                examples_dir=self.examples_dir,
             )
             yield RunBatch(run_metadata=run_metadata, tasks=[task])
         except Exception as e:

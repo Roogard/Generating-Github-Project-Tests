@@ -24,15 +24,10 @@ env/
 # Testing
 .pytest_cache/
 .coverage
-htmlcov/
 *.xml
 
 # Linting
 .ruff_cache/
-
-# ML artifacts
-data/model.pkl
-data/dataset.json
 
 # Temp files
 *.tmp
@@ -41,9 +36,6 @@ data/dataset.json
 # Runtime data
 *.db
 !ggpt.db
-chroma_db/
-!chroma_db/
-!chroma_db/**
 eval_output/
 output/
 
@@ -55,9 +47,6 @@ webapp/dist/
 .vscode/
 .idea/
 *.swp
-
-# mutmut
-.mutmut-cache/
 
 # OS
 .DS_Store

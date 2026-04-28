@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 
-from src.harness.context import HarnessContext
+from src.harness import HarnessContext
 from src.skills.agentic import run_agentic
 from src.skills.base import Skill, format_intent_section
 from src.skills.tools import build_tools

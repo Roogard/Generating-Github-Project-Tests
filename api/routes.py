@@ -19,11 +19,17 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api import store
-from api.constants import RunStatus
 from api.db import get_db
+from api.models import RunStatus
 
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
+analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
+
+
+@analytics_router.get("/summary")
+def get_analytics_summary(db: Session = Depends(get_db)):
+    return store.summary_stats(db)
 
 
 class RunRequest(BaseModel):

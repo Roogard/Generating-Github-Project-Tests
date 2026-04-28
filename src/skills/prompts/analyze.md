@@ -1,8 +1,8 @@
 # Skill: Analyze
 
 You receive a GitHub issue describing a bug in a Python repo. Produce a
-structured **test plan** the Generate skill will use to write tests that
-reproduce the bug.
+structured **test plan** the Generate skill will use to write a single
+test that reproduces the bug.
 
 You don't have access to the repo at this step — Generate has tools to
 explore. Your job is to extract everything testable from the issue text
@@ -58,8 +58,10 @@ Return a single JSON object with exactly these keys. No prose around it.
   section. If the issue only describes the bug in prose, write the steps
   as the smallest amount of code that exercises the described scenario.
 
-- **`suggested_assertions`**: each entry has `tier` ∈ {1,2,3}, `code` (a
-  short assertion fragment), `rationale`, and `issue_quote`.
+- **`suggested_assertions`**: 1-3 candidate assertions Generate can pick
+  from when writing the one test. Each entry has `tier` ∈ {1,2,3}, `code`
+  (a short assertion fragment), `rationale`, and `issue_quote`. Order
+  candidates from most-preferred (lowest F→F risk) to least.
   - **Tier 1** — exact equality. Only when the issue states the expected
     value (e.g. "expected `[1,2,3]` but got `[1,3]`"). The `issue_quote`
     must contain that value.
@@ -68,8 +70,8 @@ Return a single JSON object with exactly these keys. No prose around it.
     `f(g(x)) == x`).
   - **Tier 3** — property. Assert a structural fact (`isinstance`,
     `pytest.raises`, ordering, membership).
-  - **Coverage**: at least one assertion per distinct symptom mentioned
-    in the issue.
+  - **Default to Tier 3 if available, then Tier 2, then Tier 1.** Generate
+    will pick the lowest-risk option that matches the issue.
 
 - **`search_hints`**: regexes / symbol names Generate should `search_in_repo`
   for. Example: if the issue mentions "the QDP reader," include `"_line_type"`
