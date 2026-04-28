@@ -77,11 +77,43 @@ For each test, pick the lowest-risk tier that captures what the issue says:
 
 **Tier 3 — Property / structural (PREFERRED for "should not raise" /
 "should raise X" / "should be type Y" issues).** Assert a structural fact:
-- `pytest.raises(TypeError)` / `pytest.raises(ValueError, match=...)` for
-  bug reports of the form "X should raise Y" or "X should not raise".
+- `pytest.raises(<ExceptionType>)` for bug reports of the form "X should
+  raise Y" or "X should not raise". See "Choosing exception type vs
+  `match=`" below — these two arguments have different invention risk.
 - `isinstance(result, ExpectedType)`
 - `len(result) > 0` / `result is not None` / `key in result.colnames`
 - Membership, ordering, presence/absence.
+
+#### Choosing exception type vs `match=` for `pytest.raises`
+
+`pytest.raises(<Type>, match=<regex>)` takes two arguments. They have
+**different invention risk and you should treat them differently** —
+do NOT generalize "be skeptical" from one to the other.
+
+- **Exception type** (`ValueError`, `TypeError`, `RuntimeError`, ...) is
+  almost always GROUNDED. Sources, in order of preference: the issue's
+  traceback (`Traceback ... ValueError: ...`), the issue's prose (`raises
+  TypeError when ...`), an existing test in the repo that exercises the
+  same area, the function's docstring. **Use the type the issue or repo
+  tells you.** Don't second-guess it. The fix may change the message but
+  rarely changes the exception type.
+
+- **`match=` regex string** is almost always INVENTION. The issue
+  describes the error in its own words; you turn that into a regex. The
+  fix may raise the same exception with different wording, making your
+  regex F→F. **Use `match=` ONLY when the substring is literally quoted
+  in the issue's traceback or expected-error text.** If the issue says
+  *"raises ValueError because the dtype is wrong"*, that's prose — drop
+  `match=`. If the issue shows `ValueError: invalid dtype 'object'`,
+  `match="invalid dtype"` is fair game.
+
+Concrete contrast for one issue: "calling `set_xticks` with invalid
+kwargs without `labels` should raise":
+- ✅ `pytest.raises(ValueError)` — type from issue/existing tests
+- ❌ `pytest.raises(ValueError, match="xticklabels")` — invented regex
+- ❌ `pytest.raises(TypeError)` — second-guessed type, the fix raises ValueError
+
+Drop the regex; keep the type.
 
 **Tier 2 — Metamorphic.** Assert a *relationship* without committing to a
 specific value:
@@ -101,6 +133,39 @@ If you're tempted to write `assert result["col2"][0] == 0.5` and the issue
 didn't print that exact value, you're inventing. Use `pytest.raises` or a
 shape/type/membership assertion instead. Prefer **detect that something
 goes wrong** over **assert the precise corrected value**.
+
+## Supplementary tests — the #1 cause of F→F kills
+
+A common failure mode: the file has one solid Reproducer that earns F→P,
+plus 2-3 supplementary tests labeled `# BVA:` or `# Property:` whose
+assertions are Tier-1-in-disguise. They all fail on the fixed code because
+they invented a value the fix doesn't match. The Reproducer's F→P is
+"detected" but the F→F kills "resolved".
+
+Supplementary tests inherit the same grounding rules as the Reproducer:
+
+- **BVA**: the boundary value must come from the **issue's input space** —
+  a number/string/limit named in the issue or its traceback. If you can't
+  ground a boundary in the issue or in an existing test in the repo, **skip
+  BVA for this issue**. Do not invent boundaries from your own intuition
+  about the API.
+- **ECP**: same rule — the equivalence class must be one the issue
+  implicates (e.g. "the bug is for empty inputs" → empty-input class is
+  grounded). Don't partition on dimensions the issue doesn't mention.
+- **Property**: the assertion is a **weak invariant** — "doesn't raise",
+  "returns expected type", "len(out) == len(in)", "result is not None". A
+  property test that asserts an exact shape (`out.shape == (n, k)`), an
+  exact column name (`"col_name" in result.columns`), or an exact regex
+  match is **Tier 1 in disguise** and tends to F→F. If your "property"
+  needs a specific value to express, it's not a property — drop the test.
+- **Regression**: must guard a specific symptom the issue describes. Same
+  Tier rules.
+
+If a supplementary test would require inventing any of (an exact shape,
+an exact column/key name, a regex `match=` not quoted in the issue, an
+exact numeric output, an internal attribute name), **omit that test**.
+The Reproducer alone is worth more than a Reproducer + a Tier-1-disguised
+Property test that nukes the resolved metric.
 
 ### Worked example of the F→F trap
 

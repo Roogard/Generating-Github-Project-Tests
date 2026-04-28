@@ -36,6 +36,7 @@ class AnalyzeSkill(Skill):
                 "issue_summary": (ctx.issue_title or "")[:200],
                 "expected_behavior": "",
                 "actual_behavior": "",
+                "bug_trigger": "",
                 "reproducer_steps": [],
                 "suggested_assertions": [],
                 "search_hints": [],

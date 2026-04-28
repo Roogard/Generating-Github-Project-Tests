@@ -22,13 +22,12 @@ from langchain_core.messages import (
     AIMessage,
     BaseMessage,
     HumanMessage,
-    SystemMessage,
     ToolMessage,
 )
 from langchain_core.tools import StructuredTool
 
 from src.harness.context import BudgetExhausted, HarnessContext
-from src.llm import get_llm
+from src.llm import cached_system_message, get_llm
 
 
 @dataclass
@@ -98,7 +97,24 @@ def _pre_commit_check(ctx: HarnessContext, candidate_code: str) -> str | None:
     passed = result.get("passed") or []
 
     if not failed and not real_errors and not synthetic:
-        return None  # All clean — agent's submission is solid
+        if not passed:
+            return None  # No tests at all — let the harness handle the empty file
+        # All tests PASSED on the buggy code. For an issue-driven run this is
+        # backwards: the issue says this code is buggy, so a faithful test should
+        # fail on it (that's the F→P signal). All-pass means the test is P→P
+        # (wrong assertion / wrong trigger / wrong API surface) — never F→P.
+        return (
+            f"  All {len(passed)} tests PASSED on the buggy code.\n"
+            f"  But the issue says this code IS buggy. If your tests all pass, "
+            f"one of these is true:\n"
+            f"    - Your test exercises the wrong API (the buggy path isn't reached)\n"
+            f"    - Your trigger inputs don't activate the bug\n"
+            f"    - Your assertion describes what the buggy code does (P→P), "
+            f"not what the issue says it should do (would be F→P)\n"
+            f"  An F→P test MUST fail on the current code in the way the issue "
+            f"predicts. Revise: pick the trigger inputs from the issue, and "
+            f"assert the issue's intended behavior — not the current behavior."
+        )
 
     lines = [f"  PASS {len(passed)}  FAIL {len(failed)}  ERROR {len(real_errors)}"]
     for fd in (result.get("failure_details") or [])[:5]:
@@ -147,7 +163,7 @@ def run_agentic(
     tools_by_name = {t.name: t for t in tools}
 
     messages: list[BaseMessage] = [
-        SystemMessage(system_prompt),
+        cached_system_message(ctx.cfg, system_prompt),
         HumanMessage(user_prompt),
     ]
 
@@ -195,16 +211,22 @@ def run_agentic(
                     messages.append(HumanMessage(
                         "Pre-commit pytest check on your candidate found problems:\n"
                         f"{problems}\n\n"
-                        "Fix what's actionable in ONE revision: bad imports, "
-                        "wrong constructor arguments, missing fixtures, "
+                        "If the diagnosis lists FAIL/ERROR items: fix what's "
+                        "actionable in ONE revision — bad imports, wrong "
+                        "constructor arguments, missing fixtures, "
                         "AttributeError on object construction, Tier-1 values "
-                        "that don't match the current code. Use search_in_repo "
-                        "to find how the class is constructed in the repo's "
-                        "existing tests.\n\n"
-                        "**KEEP** any test whose failure looks like an F→P "
-                        "detection (the assertion matches the issue's intended "
-                        "behavior, the current code disagrees) — that's "
-                        "exactly what we want. Don't silence detection.\n\n"
+                        "that don't match the current code. **KEEP** any test "
+                        "whose failure looks like an F→P detection (the "
+                        "assertion matches the issue's intended behavior, the "
+                        "current code disagrees) — that's exactly what we "
+                        "want. Don't silence detection.\n\n"
+                        "If the diagnosis says all tests PASSED on the buggy "
+                        "code: your tests aren't exercising the bug. Rewrite "
+                        "to make at least one test FAIL on the current code in "
+                        "the way the issue predicts. Use the issue's reproducer "
+                        "code verbatim for trigger inputs. Assert the issue's "
+                        "stated intended behavior, not what the current code "
+                        "happens to do.\n\n"
                         "Emit the complete revised pytest file as your final "
                         "reply. No tool calls, code only."
                     ))

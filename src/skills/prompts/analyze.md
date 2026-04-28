@@ -17,6 +17,7 @@ Return a single JSON object with exactly these keys. No prose around it.
   "issue_summary": "one sentence — what's broken in the user's words",
   "expected_behavior": "what the issue says should happen, quoting where possible",
   "actual_behavior": "what the issue says the code does today",
+  "bug_trigger": "one line — what about the inputs / state activates the buggy code path. Distinct from reproducer_steps (which is how to do it). E.g. 'figure must have been shown on a hi-DPI display before pickling — bug fires only when _original_dpi != _dpi'. Empty string if the trigger is just 'call this function with these args'.",
   "reproducer_steps": [
     "ordered, concrete steps to reproduce — code snippets if the issue has them"
   ],
@@ -31,6 +32,7 @@ Return a single JSON object with exactly these keys. No prose around it.
   "search_hints": [
     "regex or symbol name to grep the repo for — file/class/function the issue mentions"
   ],
+  "test_path_glob": "glob (or comma-separated globs) for the existing tests Generate should read first — e.g. 'sklearn/decomposition/tests/test_kernel_pca.py' or 'lib/matplotlib/tests/test_axes*.py'. Existing tests show the right import idioms, fixtures, and grounded Tier-1 values for this part of the codebase.",
   "risk_notes": [
     "F→F traps to avoid (e.g. fixture setup the issue doesn't describe)"
   ]
@@ -38,6 +40,18 @@ Return a single JSON object with exactly these keys. No prose around it.
 ```
 
 ## Field rules
+
+- **`bug_trigger`**: a one-line statement of what specifically activates
+  the buggy branch. This is the **single most important field for
+  detection** — many bugs require a particular input value, environment,
+  or prior state to fire, and a test that hits the right API but the
+  wrong trigger silently P→Ps. Examples:
+  - "the input dtype must be `Int64` (nullable), not `int64`"
+  - "must be called after `set_visible(False)` AND after `draw()`"
+  - "only fires when `n_samples < n_clusters`"
+  - "requires the figure to have been shown on a hi-DPI display first"
+  If the trigger is just "call this function with these args" (no special
+  state or input quality), use an empty string `""`.
 
 - **`reproducer_steps`**: a numbered, code-level sequence. Prefer copying
   snippets verbatim from the issue's "Steps to reproduce" / "Code Sample"
@@ -61,6 +75,15 @@ Return a single JSON object with exactly these keys. No prose around it.
   for. Example: if the issue mentions "the QDP reader," include `"_line_type"`
   or `"qdp"` so Generate can find the relevant file fast. Be specific; vague
   hints waste Generate's tool budget.
+
+- **`test_path_glob`**: a glob pointing Generate at the existing tests for
+  the affected area. Best-guess from the issue's symbol/module names:
+  - "the bug is in `KernelPCA`" → `"sklearn/decomposition/tests/test_kernel_pca.py"`
+  - "issue with `pyplot.subplots`" → `"lib/matplotlib/tests/test_subplots*.py"`
+  - "AffinityPropagation" → `"sklearn/cluster/tests/test_affinity_propagation.py"`
+  Empty string if the affected module is unclear from the issue. Generate
+  uses this to crib import idioms, fixtures, and grounded values rather
+  than inventing them.
 
 - **`risk_notes`**: things that would produce F→F (false positives) if
   Generate isn't careful — e.g. "the test must skip the network setup,"

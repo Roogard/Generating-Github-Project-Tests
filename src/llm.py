@@ -1,10 +1,13 @@
 """LLM provider plumbing.
 
-`build_config` and `get_llm` are the only public API. Test-generation logic
-lives in `src/skills/` — each skill calls `get_llm(cfg).invoke(messages)` once
-per invocation (no tool binding; the harness owns dispatch).
+`build_config`, `get_llm`, and `cached_system_message` are the public API.
+Test-generation logic lives in `src/skills/` — each skill calls
+`get_llm(cfg).invoke(messages)` once per invocation (no tool binding; the
+harness owns dispatch).
 """
 import os
+
+from langchain_core.messages import SystemMessage
 
 _PROVIDERS = {
     "deepseek":  {"base_url": "https://api.deepseek.com",       "api_key_env": "DEEPSEEK_API_KEY"},
@@ -14,7 +17,7 @@ _PROVIDERS = {
 }
 _DEFAULT_MODELS = {
     "deepseek": "deepseek-chat", "openai": "gpt-4o",
-    "anthropic": "claude-sonnet-4-6", "ollama": "llama3.2",
+    "anthropic": "claude-haiku-4-5", "ollama": "llama3.2",
 }
 
 _LLM_TIMEOUT = 120  # seconds — prevents LLM API calls from hanging indefinitely
@@ -41,3 +44,26 @@ def get_llm(cfg: dict):
     if cfg["base_url"]:
         kwargs["base_url"] = cfg["base_url"]
     return ChatOpenAI(**kwargs)
+
+
+def cached_system_message(cfg: dict, text: str) -> SystemMessage:
+    """SystemMessage that opts into Anthropic ephemeral prompt caching.
+
+    For provider='anthropic' the system prompt is wrapped as a structured
+    content block carrying `cache_control: ephemeral`. langchain_anthropic
+    forwards the block as-is, so turn 2+ in a multi-turn loop pays ~0.1× the
+    input rate for the system-prompt tokens (5-minute TTL). Other providers
+    get a plain string SystemMessage — `cache_control` is Anthropic-only.
+
+    Cacheable-prefix minimums apply: 2048 tokens on Sonnet 4.6, 4096 tokens
+    on Haiku 4.5 / Opus 4.x. Below the minimum the API silently skips
+    caching (no error, just `cache_read_input_tokens=0`). Verify hits via
+    `response.usage_metadata` after the second turn of any loop.
+    """
+    if cfg.get("provider") == "anthropic":
+        return SystemMessage(content=[{
+            "type": "text",
+            "text": text,
+            "cache_control": {"type": "ephemeral"},
+        }])
+    return SystemMessage(content=text)

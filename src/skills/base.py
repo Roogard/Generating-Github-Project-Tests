@@ -10,10 +10,10 @@ import json
 import re
 from pathlib import Path
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage
 
 from src.harness.context import BudgetExhausted, HarnessContext
-from src.llm import get_llm
+from src.llm import cached_system_message, get_llm
 
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -46,7 +46,7 @@ class Skill:
         if ctx.llm_calls_used >= ctx.llm_budget:
             raise BudgetExhausted(self.name)
         llm = get_llm(ctx.cfg)
-        resp = llm.invoke([SystemMessage(self._system_prompt), HumanMessage(user_msg)])
+        resp = llm.invoke([cached_system_message(ctx.cfg, self._system_prompt), HumanMessage(user_msg)])
         ctx.llm_calls_used += 1
         content = resp.content
         if isinstance(content, list):  # some providers return a list of parts
