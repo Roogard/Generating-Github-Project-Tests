@@ -98,6 +98,7 @@ def persist_run_end(
         update_kwargs = {
             "status": status,
             "finished_at": datetime.utcnow(),
+            "current_stage": None,  # always clear stage on terminal status
         }
         if error_message is not None:
             update_kwargs["error_message"] = error_message[:2000]
@@ -114,3 +115,13 @@ def update_run_progress(run_id: int, *, current: int, total: int) -> None:
     with session_scope() as db:
         _store_update_run(db, run_id,
                           progress_current=current, progress_total=total)
+
+
+def update_run_stage(run_id: int, stage: str | None) -> None:
+    """Record the live pipeline stage. Pass `None` when the pipeline finishes
+    so the polling client knows the harness is no longer mid-stage. Called
+    by the harness at each skill boundary; safe to call frequently — the DB
+    write is one short UPDATE.
+    """
+    with session_scope() as db:
+        _store_update_run(db, run_id, current_stage=stage)

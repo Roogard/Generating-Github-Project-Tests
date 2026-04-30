@@ -1,17 +1,18 @@
 """GenerateSkill — issue + plan → agentic exploration → final test file.
 
-Fully agentic. The LLM gets the issue + Analyze's test plan + tools (read_file,
-search_in_repo, search_in_file, list_dir, run_generated_tests) and writes the
-test file by exploring the repo. There's no single-shot fallback — without
-the ability to read the repo, an issue-driven agent can't import anything
-correctly.
+Fully agentic. The LLM gets the issue + Analyze's test plan + Claude Code-shaped
+tools (Glob, Grep, Read, Edit, Write) and iterates: write a draft, the harness
+auto-runs pytest and injects the result, agent revises, repeats. There's no
+single-shot fallback — without the ability to read the repo, an issue-driven
+agent can't import anything correctly.
 
-The agent's final assistant message (with no tool calls) IS the submission;
-the harness writes that text to disk.
+The submission is whatever's on disk when the loop ends. The agent's
+final-message text is a fallback used only if no test file was ever written.
 """
 from __future__ import annotations
 
 import json
+import os
 
 from src.harness import HarnessContext
 from src.skills.agentic import run_agentic
@@ -39,12 +40,25 @@ class GenerateSkill(Skill):
         parts.append(_format_plan(ctx.analysis or {}))
 
         parts.append(
-            "\n## Workflow\n"
-            "1. Use `search_in_repo` with the plan's `search_hints` to find relevant files.\n"
-            "2. Use `read_file` to see imports / signatures of the public API and any nearby existing tests.\n"
-            "3. Write your candidate test file. Run `run_generated_tests` to verify it imports cleanly.\n"
-            "   (Tests SHOULD fail on the buggy code — don't 'fix' them by silencing the assertion.)\n"
-            "4. Emit the COMPLETE test file as your final reply, with no tool calls. That is the submission.\n"
+            f"\n## Workflow — iterate like a human writing pytest\n"
+            f"1. Use `Grep` (default `output_mode='files_with_matches'`) with the plan's\n"
+            f"   `search_hints` to find relevant files. Use `Glob` for pattern-based file\n"
+            f"   lookup (e.g. `Glob('**/test_*.py')`).\n"
+            f"2. Use `Read` to see imports / signatures of the public API and any nearby\n"
+            f"   existing tests. Re-Grep with `output_mode='content'` for line-level matches.\n"
+            f"3. Call `Write(file_path={ctx.test_file_path!r}, content=...)` to put a draft\n"
+            f"   on disk. **The harness will automatically run pytest and append the results\n"
+            f"   (PASS/FAIL/ERROR + tracebacks) into your next turn's context** — you don't\n"
+            f"   need to ask. Look for `[harness] pytest after your test file changed:` in\n"
+            f"   the next message.\n"
+            f"4. **All-pass on the buggy code means your test isn't reproducing the bug.**\n"
+            f"   F→P (test fails on buggy, passes on fixed = bug detected) is what we want.\n"
+            f"5. Revise: prefer `Edit` for small fixes (one assertion, one import) — cheaper\n"
+            f"   than rewriting. Use `Write` for full rewrites. Either way the harness\n"
+            f"   re-runs pytest. Repeat until you have an F→P signal or you're out of budget.\n"
+            f"6. **When done, emit a short final message ('done') with no tool calls.** The\n"
+            f"   harness submits whatever's on disk — do NOT re-emit the full code in your\n"
+            f"   final message.\n"
         )
 
         result = run_agentic(
@@ -53,15 +67,26 @@ class GenerateSkill(Skill):
             user_prompt="\n".join(parts),
             tools=build_tools(ctx),
             final_answer_instruction=(
-                "Emit the complete pytest test file. Code only — no fences, no prose."
+                "The harness will submit whatever's on disk from your last Write or Edit. "
+                "Just confirm you're done."
             ),
         )
-        code = self._strip_code_fence(result.final_text)
+
+        # Submission rule: file on disk wins (agent used Write/Edit); fall back
+        # to final-message text only if the agent never wrote.
+        if os.path.isfile(ctx.test_file_path) and ctx.read_test_file().strip():
+            code = ctx.read_test_file()
+            submission_source = "disk"
+        else:
+            code = self._strip_code_fence(result.final_text)
+            submission_source = "final_message"
+
         ctx.attempts.append({
             "skill": self.name, "mode": "agentic",
             "lines": len(code.splitlines()),
             "turns": result.turns,
             "tool_calls": result.tool_calls,
             "forced_final": result.forced_final,
+            "submission_source": submission_source,
         })
         return code

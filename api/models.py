@@ -36,6 +36,9 @@ class Run(Base):
     elapsed_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     progress_current: Mapped[int] = mapped_column(Integer, default=0)
     progress_total: Mapped[int] = mapped_column(Integer, default=0)
+    # Live pipeline stage during execution (e.g. 'analyze', 'generate',
+    # 'improve_infra', 'critique', 'improve_semantic'). NULL when idle/done.
+    current_stage: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # LLM config (flat columns, no JSON blob)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)

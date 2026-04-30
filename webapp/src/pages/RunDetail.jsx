@@ -7,15 +7,34 @@ function Badge({ status }) {
   return <span className={`badge badge-${status}`}>{status}</span>
 }
 
-function ProgressSection({ current, total, status }) {
-  if (status !== 'running' || total === 0) return null
-  const pct = Math.round((current / total) * 100)
+// Pipeline stages emitted by the harness, mapped to human-readable labels.
+const STAGE_LABELS = {
+  analyze: 'Analyzing issue',
+  generate: 'Writing test',
+  improve_infra: 'Fixing test infrastructure',
+  critique: 'Critiquing test',
+  improve_semantic: 'Refining test',
+}
+
+function ProgressSection({ current, total, status, stage }) {
+  if (status !== 'running') return null
+  const pct = total > 0 ? Math.round((current / total) * 100) : 0
+  const stageLabel = stage ? (STAGE_LABELS[stage] || stage) : null
   return (
     <div className="alert alert-info" style={{ marginBottom: 20 }}>
-      <strong>Running...</strong> {current}/{total} functions complete ({pct}%)
-      <div className="progress-bar-wrap" style={{ marginTop: 8 }}>
-        <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
-      </div>
+      <strong>Running...</strong>
+      {total > 0 && <> {current}/{total} functions complete ({pct}%)</>}
+      {stageLabel && (
+        <div style={{ marginTop: 6, fontSize: 13, color: 'var(--text-2)' }}>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--text-3)' }}>stage: </span>
+          {stageLabel}
+        </div>
+      )}
+      {total > 0 && (
+        <div className="progress-bar-wrap" style={{ marginTop: 8 }}>
+          <div className="progress-bar-fill" style={{ width: `${pct}%` }} />
+        </div>
+      )}
     </div>
   )
 }
@@ -131,20 +150,45 @@ export default function RunDetail() {
     loadFull()
   }, [id])
 
+  // Status polling with backoff. Cadence by elapsed time since polling
+  // started for THIS running phase: 3s for the first 30s (fast feedback when
+  // the run is short), 10s through ~5 min (typical agentic loop), 30s after.
+  // Resets each time status flips back to 'running' (e.g. a new batch).
   useEffect(() => {
     if (!run || run.status !== 'running') return
-    const timer = setInterval(() => {
-      getRunStatus(id)
-        .then(s => {
-          setRun(r => r ? { ...r, status: s.status, progress_current: s.progress_current, progress_total: s.progress_total, error_message: s.error_message } : r)
-          if (s.status !== 'running') {
-            clearInterval(timer)
-            loadFull()
-          }
-        })
-        .catch(() => {})
-    }, 3000)
-    return () => clearInterval(timer)
+    let cancelled = false
+    let timer = null
+    const startedAt = Date.now()
+    const nextDelay = () => {
+      const elapsed = Date.now() - startedAt
+      if (elapsed < 30_000) return 3000
+      if (elapsed < 300_000) return 10_000
+      return 30_000
+    }
+    const tick = async () => {
+      if (cancelled) return
+      try {
+        const s = await getRunStatus(id)
+        if (cancelled) return
+        setRun(r => r ? {
+          ...r,
+          status: s.status,
+          progress_current: s.progress_current,
+          progress_total: s.progress_total,
+          current_stage: s.current_stage,
+          error_message: s.error_message,
+        } : r)
+        if (s.status !== 'running') {
+          loadFull()  // pull full detail (functions array) once we're terminal
+          return
+        }
+      } catch {
+        // swallow transient network errors; just re-schedule
+      }
+      timer = setTimeout(tick, nextDelay())
+    }
+    timer = setTimeout(tick, nextDelay())
+    return () => { cancelled = true; if (timer) clearTimeout(timer) }
   }, [run?.status])
 
   if (error) return (
@@ -174,7 +218,7 @@ export default function RunDetail() {
         </div>
       </div>
 
-      <ProgressSection current={run.progress_current} total={run.progress_total} status={run.status} />
+      <ProgressSection current={run.progress_current} total={run.progress_total} status={run.status} stage={run.current_stage} />
 
       {run.error_message && <div className="alert alert-error">{run.error_message}</div>}
 

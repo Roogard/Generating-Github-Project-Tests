@@ -8,10 +8,11 @@ The agent is given:
   1. A repo URL + base commit (or HF dataset row), already cloned and runnable.
   2. The issue text (and optional PR-review hints).
 
-It localizes the relevant code itself via `read_file` / `search_in_repo` /
-`list_dir` tools, writes a pytest file, and runs it via `run_generated_tests`
-to verify it imports cleanly. The agent declares done by emitting a final
-assistant message with no tool calls — that message IS the submission.
+It localizes the relevant code itself via Claude Code-shaped tools (Glob,
+Grep, Read, Edit, Write), writes a pytest file, and the harness auto-runs
+pytest after any modification to the test file. The agent declares done by
+emitting a final assistant message with no tool calls — the file on disk
+IS the submission.
 
 When the task carries a `gold_patch` (SWT-Bench / repos with a known fix),
 the runner grades post-hoc: run tests on buggy → apply patch → run on fixed
@@ -38,7 +39,7 @@ loop** — the agent must reproduce the bug from the issue alone.
                    run_harness(task)
                            │
                            ▼
-              Analyze → Generate (agentic) → maybe Improve once
+              Analyze → Generate (agentic) → maybe Improve(infra) → Critique → maybe Improve(semantic)
                            │
                            ▼
                   ctx.read_test_file()  → AgentResult
@@ -69,7 +70,7 @@ src/
   oracle.py          SWT-bench classifier + buggy↔fixed transitions + grade_with_oracle (post-hoc only)
   persist.py         Single persistence path (Run + Function rows)
   types.py           AgentTask, AgentResult, OracleGrade, RunBatch
-  harness.py         HarnessContext + Feedback + run_harness (Analyze → Generate → Improve → Finalize)
+  harness.py         HarnessContext + Feedback + run_harness (Analyze → Generate → Improve(infra) → Critique → Improve(semantic) → Finalize)
   inputs/
     base.py          InputAdapter ABC + PRESETS
     repo.py          RepoAdapter — (URL, issue_text) → AgentTask
@@ -83,11 +84,12 @@ src/
   skills/
     base.py          Skill base class — prompt loading, single LLM call
     agentic.py       Reusable tool-using LLM loop (used by Generate + Improve)
-    tools.py         read_file, search_in_repo, search_in_file, list_dir, run_generated_tests
+    tools.py         Glob, Grep, Read, Edit, Write — Claude Code-shaped agent tool kit
     analyze.py       AnalyzeSkill — issue → JSON test plan
     generate.py      GenerateSkill — agentic; explores repo, writes tests
-    improve.py       ImproveSkill — fallback for collection/setup failures
-    prompts/         _shared.md + analyze.md + generate.md + improve.md
+    improve.py       ImproveSkill — dual-mode: infrastructure (collection/setup failures) and semantic (Critique-driven, may re-explore)
+    critique.py      CritiqueSkill — predicts F→P / F→F / P→F / P→P; needs_revision triggers semantic Improve
+    prompts/         _shared.md + analyze.md + generate.md + improve.md + critique.md
 
 api/
   app.py             FastAPI app + lifespan + SPA mount
@@ -161,8 +163,8 @@ since there's no ground-truth fix.
 - All runs go through webapp → API → DB. No CLI entry points.
 - The harness owns side effects (subprocess, file writes, runtime preamble).
   Skills are LLM calls — they don't run pytest or write files. The agentic
-  loop's `run_generated_tests` tool is the one exception, and it routes
-  through `ctx.runtime.exec` like everything else.
+  loop's auto-pytest hook (fires after Write or Edit on `ctx.test_file_path`)
+  routes through `ctx.runtime.exec` like everything else.
 - All process invocations go through `ctx.runtime.exec(...)`. Never call
   `subprocess.run` directly from `test_runner.py` or `oracle.py` — adding
   it back breaks Docker isolation. Host-side `git apply` against the

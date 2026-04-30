@@ -155,6 +155,7 @@ def get_run_status(run_id: int, db: Session = Depends(get_db)):
         "status": run.status,
         "progress_current": run.progress_current,
         "progress_total": run.progress_total,
+        "current_stage": run.current_stage,
         "error_message": run.error_message,
     }
 
@@ -197,6 +198,7 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
         "error_message": run.error_message,
         "elapsed_seconds": run.elapsed_seconds,
         "patch_applied": run.patch_applied,
+        "current_stage": run.current_stage,
         "functions": [
             {
                 "id": fn.id,

@@ -81,6 +81,11 @@ class AgentResult:
     tests_failed: int
     tests_errored: int
     tests_run: int
+    # CritiqueSkill's full prediction — None if Critique didn't run.
+    # Headline fields (expected_transition, confidence, needs_revision) are
+    # also duplicated into history; this field carries the full rationale +
+    # concerns list for analytics.
+    critique: dict | None = None
 
 
 @dataclass

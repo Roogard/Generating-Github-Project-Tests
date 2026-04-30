@@ -22,8 +22,12 @@ from src.runtime.swtbench import SwtBenchRuntime
 from src.types import AgentResult, AgentTask
 
 
-def run_agent(task: AgentTask) -> AgentResult:
+def run_agent(task: AgentTask, *, run_id: int | None = None) -> AgentResult:
     """Run the harness loop for one task. Returns an AgentResult.
+
+    `run_id` is passed through so the harness can emit live stage updates
+    against the matching Run row. Defaults to None for callers (e.g. direct
+    tests) that don't have a DB row.
 
     Caller (the runner) owns the runtime lifecycle — `runtime.shutdown()`
     is called once after all tasks for a runtime have been processed.
@@ -45,6 +49,7 @@ def run_agent(task: AgentTask) -> AgentResult:
     try:
         harness_result = run_harness(
             task.cfg, task.repo_dir, task.out_dir, task.runtime,
+            run_id=run_id,
             issue_text=task.issue_text,
             issue_title=task.issue_title,
             hints_text=task.hints_text,
@@ -69,6 +74,7 @@ def run_agent(task: AgentTask) -> AgentResult:
         tests_failed=harness_result.get("tests_failed", 0),
         tests_errored=harness_result.get("tests_errored", 0),
         tests_run=harness_result.get("tests_run", 0),
+        critique=harness_result.get("critique"),
     )
 
 

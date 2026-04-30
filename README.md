@@ -2,7 +2,7 @@
 
 An issue-driven AI agent that reads GitHub bug reports and writes regression tests that reproduce the bug. Evaluated on **SWT-Bench Lite** (300 real GitHub issues) using the F→P / F→F / P→F / P→P transition oracle.
 
-The agent is given a repo + base commit and the issue text. It localizes the relevant code itself via `read_file` / `search_in_repo` / `list_dir` tools, writes a pytest file, and runs it to verify it imports cleanly. When a gold patch is available (SWT-Bench), the runner grades post-hoc: run on buggy → apply patch → run on fixed → label each test's transition.
+The agent is given a repo + base commit and the issue text. It localizes the relevant code itself via Claude Code-shaped tools (`Glob` / `Grep` / `Read` / `Edit` / `Write`), writes a pytest file, and the harness auto-runs pytest after any modification to the test file. When a gold patch is available (SWT-Bench), the runner grades post-hoc: run on buggy → apply patch → run on fixed → label each test's transition.
 
 ---
 

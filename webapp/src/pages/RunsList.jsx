@@ -200,7 +200,7 @@ export default function RunsList() {
               style={{ fontFamily: 'inherit', resize: 'vertical', minHeight: 140 }}
             />
             <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}>
-              The agent localizes the relevant code itself by exploring the repo with read_file / search_in_repo tools. You don't need to point at a specific function.
+              The agent localizes the relevant code itself by exploring the repo with Glob / Grep / Read tools. You don't need to point at a specific function.
             </div>
           </div>
           <div className="form-group">

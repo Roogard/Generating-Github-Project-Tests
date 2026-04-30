@@ -1,19 +1,24 @@
-"""Agentic tools used by Generate / Improve.
+"""Agentic tool kit — mirrors Claude Code's tool shape.
 
-Five read-only-ish tools, modeled on SWE-Agent's Agent-Computer Interface:
+Five tools (PascalCase to match Claude Code):
+  Glob(pattern, path=None)
+    File pattern matching. Returns paths sorted by mtime.
+  Grep(pattern, path=None, output_mode='files_with_matches', ...)
+    Regex content search. Three output modes: files_with_matches | content | count.
+  Read(file_path, offset=1, limit=2000)
+    Windowed file read with cat -n line numbers.
+  Edit(file_path, old_string, new_string, replace_all=False)
+    Exact string replace. Requires the file to have been Read this session.
+  Write(file_path, content)
+    Full file write. When the target is ctx.test_file_path, markdown fences
+    and relative imports are stripped via ctx.write_test_file.
 
-  read_file(path, start, end)        100-line window with line numbers
-  search_in_repo(pattern, glob)      file list (no contents — SWE-Agent finding)
-  search_in_file(path, pattern)      line+context matches inside one file
-  list_dir(path)                     dir listing
-  run_generated_tests()              pytest on ctx.test_file_path
+There is no run-tests tool: when Write or Edit modifies ctx.test_file_path,
+the harness auto-runs pytest and injects the result into the next LLM turn
+(see src/skills/agentic.py).
 
-`write_file` is intentionally NOT exposed — the harness keeps ownership of
-ctx.test_file_path. The agentic loop's final-answer turn carries the test
-code as plain text and the harness writes it via ctx.write_test_file().
-
-Path safety: every relative path resolves under ctx.repo_dir. Absolute paths
-that escape ctx.repo_dir are rejected.
+Path safety: every relative path resolves under ctx.repo_dir or ctx.test_dir.
+Absolute paths that escape both are rejected.
 """
 from __future__ import annotations
 
@@ -26,228 +31,321 @@ from langchain_core.tools import StructuredTool
 from src.harness import HarnessContext
 
 
-_DEFAULT_WINDOW = 100
-_MAX_FILE_BYTES = 200_000  # cap any one read at ~200KB so tool output doesn't blow context
-_SEARCH_RESULT_CAP = 50    # max files / matches returned per call
+_DEFAULT_READ_LIMIT = 2000
+_MAX_FILE_BYTES = 200_000
+_DEFAULT_HEAD_LIMIT = 250
 _SKIP_DIR_NAMES = {".git", "__pycache__", "node_modules", "venv", ".venv",
                    "dist", "build", ".tox", ".mypy_cache", ".pytest_cache"}
 
 
 # ── Path resolution / safety ────────────────────────────────────────────────
 
-def _resolve_under(repo_dir: str, path: str) -> Path | None:
-    """Resolve `path` (relative or absolute) and return it only if it sits
-    under repo_dir. Returns None if it escapes — caller should refuse.
+def _resolve(ctx: HarnessContext, path: str) -> Path | None:
+    """Resolve a relative-or-absolute path under ctx.repo_dir OR ctx.test_dir.
+    Returns None if it escapes both — caller should refuse.
     """
-    repo = Path(repo_dir).resolve()
     p = Path(path)
-    target = (p if p.is_absolute() else repo / p).resolve()
+    for root in (Path(ctx.repo_dir).resolve(), Path(ctx.test_dir).resolve()):
+        target = (p if p.is_absolute() else root / p).resolve()
+        try:
+            target.relative_to(root)
+            return target
+        except ValueError:
+            continue
+    return None
+
+
+def _display_path(ctx: HarnessContext, p: Path) -> str:
+    """Format a path for display: relative to repo_dir if possible, else as-is."""
+    repo = Path(ctx.repo_dir).resolve()
     try:
-        target.relative_to(repo)
+        return p.relative_to(repo).as_posix()
     except ValueError:
-        return None
-    return target
+        return p.as_posix()
 
 
-# ── Tool implementations (take HarnessContext, return string for tool message) ─
+def _iter_files(root: Path):
+    for r, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d not in _SKIP_DIR_NAMES and not d.startswith(".")]
+        for name in files:
+            yield Path(r) / name
 
-def _read_file(ctx: HarnessContext, path: str,
-               start_line: int = 1, end_line: int | None = None) -> str:
-    target = _resolve_under(ctx.repo_dir, path)
+
+# ── Glob ────────────────────────────────────────────────────────────────────
+
+def _glob(ctx: HarnessContext, pattern: str, path: str | None = None) -> str:
+    base = _resolve(ctx, path) if path else Path(ctx.repo_dir).resolve()
+    if base is None or not base.is_dir():
+        return f"ERROR: {path!r} is not a directory under the repo."
+
+    try:
+        candidates = list(base.rglob(pattern))
+    except (OSError, ValueError) as e:
+        return f"ERROR: invalid glob pattern {pattern!r}: {e}"
+
+    matches = []
+    for p in candidates:
+        if not p.is_file():
+            continue
+        rel_parts = p.relative_to(base).parts
+        if any(part in _SKIP_DIR_NAMES or part.startswith(".") for part in rel_parts[:-1]):
+            continue
+        matches.append(p)
+
+    matches.sort(key=lambda p: -p.stat().st_mtime)
+    matches = matches[:_DEFAULT_HEAD_LIMIT]
+    if not matches:
+        return f"No files match {pattern!r}."
+    return "\n".join(p.relative_to(base).as_posix() for p in matches)
+
+
+# ── Grep ────────────────────────────────────────────────────────────────────
+
+def _grep(ctx: HarnessContext, pattern: str, path: str | None = None,
+          output_mode: str = "files_with_matches", glob: str = "*",
+          case_insensitive: bool = False, line_numbers: bool = True,
+          before: int | None = None, after: int | None = None,
+          context: int | None = None,
+          head_limit: int = _DEFAULT_HEAD_LIMIT,
+          multiline: bool = False) -> str:
+    """Regex search across files. Mirrors Claude Code's Grep tool.
+
+    output_mode controls the return:
+      files_with_matches (default) — paths only
+      content — matching lines (optionally with surrounding context)
+      count — '<path>:<n>' per matching file
+    """
+    if output_mode not in {"files_with_matches", "content", "count"}:
+        return (f"ERROR: unknown output_mode {output_mode!r}. "
+                f"Use 'files_with_matches' | 'content' | 'count'.")
+
+    flags = 0
+    if case_insensitive:
+        flags |= re.IGNORECASE
+    if multiline:
+        flags |= re.DOTALL | re.MULTILINE
+    try:
+        rx = re.compile(pattern, flags)
+    except re.error as e:
+        return f"ERROR: invalid regex {pattern!r}: {e}"
+
+    if context is not None:
+        before = after = context
+    before = max(0, before or 0)
+    after = max(0, after or 0)
+
+    if path:
+        target = _resolve(ctx, path)
+        if target is None:
+            return f"ERROR: {path!r} resolves outside the repo."
+        files = [target] if target.is_file() else list(_iter_files(target))
+    else:
+        files = list(_iter_files(Path(ctx.repo_dir).resolve()))
+
+    files = [f for f in files if f.match(glob)]
+
+    matched_files: list[str] = []
+    counts: list[tuple[str, int]] = []
+    content_blocks: list[str] = []
+
+    for f in files:
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        lines = text.splitlines()
+        hit_idx = [i for i, ln in enumerate(lines) if rx.search(ln)]
+        if not hit_idx:
+            continue
+        rel = _display_path(ctx, f)
+        matched_files.append(rel)
+        counts.append((rel, len(hit_idx)))
+
+        if output_mode == "content":
+            shown: set[int] = set()
+            for i in hit_idx:
+                lo, hi = max(0, i - before), min(len(lines), i + after + 1)
+                for j in range(lo, hi):
+                    if j in shown:
+                        continue
+                    shown.add(j)
+                    sep = ":" if j == i else "-"
+                    if line_numbers:
+                        content_blocks.append(f"{rel}{sep}{j+1}{sep}{lines[j]}")
+                    else:
+                        content_blocks.append(f"{rel}{sep}{lines[j]}")
+
+        if output_mode == "files_with_matches" and len(matched_files) >= head_limit:
+            break
+
+    if output_mode == "files_with_matches":
+        return "\n".join(matched_files[:head_limit]) if matched_files else f"No files match {pattern!r}."
+    if output_mode == "count":
+        return "\n".join(f"{p}:{n}" for p, n in counts[:head_limit]) if counts else f"No matches for {pattern!r}."
+    return "\n".join(content_blocks[:head_limit]) if content_blocks else f"No matches for {pattern!r}."
+
+
+# ── Read ────────────────────────────────────────────────────────────────────
+
+def _read(ctx: HarnessContext, file_path: str, offset: int = 1,
+          limit: int = _DEFAULT_READ_LIMIT) -> str:
+    target = _resolve(ctx, file_path)
     if target is None:
-        return f"ERROR: {path!r} resolves outside the repo. Use a path under the repo root."
+        return f"ERROR: {file_path!r} resolves outside the repo."
     if not target.is_file():
-        return f"ERROR: {path!r} is not a file (or doesn't exist)."
+        return f"ERROR: {file_path!r} is not a file (or doesn't exist)."
 
     try:
         size = target.stat().st_size
         if size > _MAX_FILE_BYTES:
-            return (f"ERROR: {path!r} is {size} bytes (>{_MAX_FILE_BYTES}). "
-                    f"Use start_line/end_line to read a specific window.")
+            return (f"ERROR: {file_path!r} is {size} bytes (>{_MAX_FILE_BYTES}). "
+                    f"Use offset/limit to read a window.")
         text = target.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
-        return f"ERROR reading {path!r}: {e}"
+        return f"ERROR reading {file_path!r}: {e}"
 
     lines = text.splitlines()
     total = len(lines)
-    if start_line < 1:
-        start_line = 1
-    if end_line is None:
-        end_line = min(start_line + _DEFAULT_WINDOW - 1, total)
-    end_line = min(end_line, total)
-    if start_line > total:
-        return f"{path} has {total} lines; start_line={start_line} is past EOF."
+    start = max(1, offset)
+    if start > total:
+        return f"{file_path} has {total} lines; offset={offset} is past EOF."
+    end = min(total, start + max(1, limit) - 1)
 
-    window = lines[start_line - 1:end_line]
-    width = len(str(end_line))
-    body = "\n".join(f"{n:{width}d}  {ln}" for n, ln in enumerate(window, start=start_line))
-    suffix = f"\n... ({total - end_line} more lines below)" if end_line < total else ""
-    return f"{path} (lines {start_line}-{end_line} of {total}):\n{body}{suffix}"
+    ctx.read_paths.add(str(target))
+    window = lines[start - 1:end]
+    width = max(4, len(str(end)))
+    body = "\n".join(f"{n:{width}d}\t{ln}" for n, ln in enumerate(window, start=start))
+    suffix = f"\n... ({total - end} more lines below)" if end < total else ""
+    return f"{file_path} (lines {start}-{end} of {total}):\n{body}{suffix}"
 
 
-def _search_in_repo(ctx: HarnessContext, pattern: str, glob: str = "*.py") -> str:
-    """Return a deduplicated list of file paths whose contents match `pattern`.
+# ── Edit ────────────────────────────────────────────────────────────────────
 
-    Output deliberately omits match contents — SWE-Agent's design finding:
-    "succinctly list the matches by simply listing each file." Reduces clutter
-    so the agent can pick which file to read with read_file.
-    """
-    try:
-        rx = re.compile(pattern)
-    except re.error as e:
-        return f"ERROR: invalid regex {pattern!r}: {e}"
-
-    repo = Path(ctx.repo_dir).resolve()
-    matched: list[str] = []
-    truncated = False
-
-    for root, dirs, files in os.walk(repo):
-        dirs[:] = [d for d in dirs if d not in _SKIP_DIR_NAMES and not d.startswith(".")]
-        for name in files:
-            if not Path(name).match(glob):
-                continue
-            full = Path(root) / name
-            try:
-                with full.open("r", encoding="utf-8", errors="replace") as f:
-                    if any(rx.search(line) for line in f):
-                        rel = full.relative_to(repo).as_posix()
-                        matched.append(rel)
-                        if len(matched) >= _SEARCH_RESULT_CAP:
-                            truncated = True
-                            break
-            except OSError:
-                continue
-        if truncated:
-            break
-
-    if not matched:
-        return f"No files matching glob={glob!r} contain pattern {pattern!r}."
-    suffix = f"\n... (truncated at {_SEARCH_RESULT_CAP})" if truncated else ""
-    return f"{len(matched)} file(s) match:\n" + "\n".join(matched) + suffix
-
-
-def _search_in_file(ctx: HarnessContext, path: str, pattern: str) -> str:
-    target = _resolve_under(ctx.repo_dir, path)
+def _edit(ctx: HarnessContext, file_path: str, old_string: str,
+          new_string: str, replace_all: bool = False) -> str:
+    target = _resolve(ctx, file_path)
     if target is None:
-        return f"ERROR: {path!r} resolves outside the repo."
+        return f"ERROR: {file_path!r} resolves outside the repo."
     if not target.is_file():
-        return f"ERROR: {path!r} is not a file (or doesn't exist)."
+        return f"ERROR: {file_path!r} is not a file (or doesn't exist)."
+    if str(target) not in ctx.read_paths:
+        return (f"ERROR: must Read {file_path!r} before editing it. "
+                f"Call Read(file_path={file_path!r}) first.")
+    if old_string == new_string:
+        return "ERROR: old_string and new_string are identical."
+    if not old_string:
+        return "ERROR: old_string is empty. To create a new file, use Write."
 
     try:
-        rx = re.compile(pattern)
-    except re.error as e:
-        return f"ERROR: invalid regex {pattern!r}: {e}"
-
-    matches: list[str] = []
-    try:
-        with target.open("r", encoding="utf-8", errors="replace") as f:
-            for n, line in enumerate(f, start=1):
-                if rx.search(line):
-                    matches.append(f"{n:>5}  {line.rstrip()}")
-                    if len(matches) >= _SEARCH_RESULT_CAP:
-                        matches.append(f"... (truncated at {_SEARCH_RESULT_CAP})")
-                        break
+        text = target.read_text(encoding="utf-8", errors="replace")
     except OSError as e:
-        return f"ERROR reading {path!r}: {e}"
+        return f"ERROR reading {file_path!r}: {e}"
 
-    if not matches:
-        return f"No matches for {pattern!r} in {path}."
-    return f"{path} matches for {pattern!r}:\n" + "\n".join(matches)
+    n = text.count(old_string)
+    if n == 0:
+        return f"ERROR: old_string not found in {file_path}."
+    if n > 1 and not replace_all:
+        return (f"ERROR: old_string occurs {n} times in {file_path}. "
+                f"Provide more context to make it unique, or pass replace_all=True.")
+
+    new_text = text.replace(old_string, new_string) if replace_all else text.replace(old_string, new_string, 1)
+    try:
+        target.write_text(new_text, encoding="utf-8")
+    except OSError as e:
+        return f"ERROR writing {file_path!r}: {e}"
+    return f"edited {file_path} ({n} replacement{'s' if n > 1 else ''})."
 
 
-def _list_dir(ctx: HarnessContext, path: str = ".") -> str:
-    target = _resolve_under(ctx.repo_dir, path)
+# ── Write ───────────────────────────────────────────────────────────────────
+
+def _write(ctx: HarnessContext, file_path: str, content: str) -> str:
+    target = _resolve(ctx, file_path)
     if target is None:
-        return f"ERROR: {path!r} resolves outside the repo."
-    if not target.is_dir():
-        return f"ERROR: {path!r} is not a directory (or doesn't exist)."
+        return f"ERROR: {file_path!r} resolves outside the repo."
+    if content is None or not content.strip():
+        return "ERROR: content is empty."
 
-    entries = []
+    # Writing the test file routes through the harness's write_test_file so
+    # markdown fences and relative imports get stripped (preserves an existing
+    # protection that matters for the LLM's submission).
+    test_file_resolved = Path(ctx.test_file_path).resolve()
+    if target == test_file_resolved:
+        try:
+            n = ctx.write_test_file(content)
+        except ValueError as e:
+            return f"ERROR: {e}."
+        ctx.read_paths.add(str(target))
+        return f"wrote {n} lines to {file_path}."
+
+    target.parent.mkdir(parents=True, exist_ok=True)
     try:
-        for child in sorted(target.iterdir()):
-            name = child.name
-            if name in _SKIP_DIR_NAMES or name.startswith("."):
-                continue
-            tag = "[dir]" if child.is_dir() else "[file]"
-            entries.append(f"  {tag}  {name}")
+        target.write_text(content, encoding="utf-8")
     except OSError as e:
-        return f"ERROR listing {path!r}: {e}"
-
-    if not entries:
-        return f"{path} is empty (or only contains hidden/skipped entries)."
-    return f"{path}/:\n" + "\n".join(entries)
-
-
-def _run_generated_tests(ctx: HarnessContext) -> str:
-    """Run pytest on ctx.test_file_path. Returns a compact summary —
-    pass/fail/error counts and short failure tracebacks. NEVER tells the agent
-    "you can stop now" — final-answer decision stays with the agent."""
-    from src.test_runner import run_tests as _pytest_run
-
-    if not os.path.isfile(ctx.test_file_path):
-        return ("ERROR: no test file written yet. Emit your candidate as the "
-                "final assistant message and the harness will write+run it.")
-
-    result = _pytest_run(
-        ctx.test_file_path, ctx.repo_dir, ctx.runtime,
-        timeout=ctx.timeout, per_test_timeout=ctx.per_test_timeout,
-    )
-    passed = result.get("passed", [])
-    failed = result.get("failed", [])
-    errored = [n for n in result.get("errors", []) if not n.startswith("__")]
-
-    lines = [f"PASS {len(passed)}  FAIL {len(failed)}  ERROR {len(errored)}"]
-    for fd in (result.get("failure_details") or [])[:5]:
-        nodeid = fd.get("nodeid", "?").split("::")[-1]
-        rep = (fd.get("longrepr") or "").strip().splitlines()
-        head = rep[0] if rep else ""
-        tail = rep[-1] if len(rep) > 1 else ""
-        lines.append(f"  FAIL {nodeid}: {head[:200]}")
-        if tail and tail != head:
-            lines.append(f"        {tail[:200]}")
-    for ed in (result.get("error_details") or [])[:3]:
-        nodeid = ed.get("nodeid", "?").split("::")[-1]
-        head = ((ed.get("longrepr") or "").strip().splitlines() or [""])[0]
-        lines.append(f"  ERROR {nodeid}: {head[:200]}")
-    return "\n".join(lines)
+        return f"ERROR writing {file_path!r}: {e}"
+    ctx.read_paths.add(str(target))
+    return f"wrote {len(content.splitlines())} lines to {file_path}."
 
 
 # ── Public: build the StructuredTool list bound to a context ────────────────
 
 def build_tools(ctx: HarnessContext) -> list[StructuredTool]:
-    """Bind the tools to a HarnessContext and return LangChain tool wrappers."""
     return [
         StructuredTool.from_function(
-            name="read_file",
-            description=("Read a window of a file in the repo. Default window is 100 lines. "
-                         "Use this to inspect related code, helpers, or existing tests. "
-                         "Path is relative to the repo root."),
-            func=lambda path, start_line=1, end_line=None: _read_file(ctx, path, start_line, end_line),
+            name="Glob",
+            description=(
+                "Find files by glob pattern (e.g. '**/*.py', 'src/**/test_*.py'). "
+                "Returns matching file paths sorted by modification time, newest first. "
+                "Path defaults to the repo root."
+            ),
+            func=lambda pattern, path=None: _glob(ctx, pattern, path),
         ),
         StructuredTool.from_function(
-            name="search_in_repo",
-            description=("Find which files in the repo contain a regex pattern. Returns a "
-                         "list of file paths only (no contents). Use search_in_file or "
-                         "read_file to see contents. Useful for locating helpers, related "
-                         "tests, or class definitions."),
-            func=lambda pattern, glob="*.py": _search_in_repo(ctx, pattern, glob),
+            name="Grep",
+            description=(
+                "Regex content search across files. output_mode controls output:\n"
+                "  'files_with_matches' (default) — paths only (use first to narrow)\n"
+                "  'content' — matching lines, optional surrounding context via before/after/context\n"
+                "  'count' — '<path>:<n>' per file\n"
+                "Other args: glob (e.g. '*.py'), case_insensitive, line_numbers, "
+                "head_limit, multiline (regex spans line breaks). "
+                "path may be a directory or a single file."
+            ),
+            func=lambda pattern, path=None, output_mode="files_with_matches",
+                       glob="*", case_insensitive=False, line_numbers=True,
+                       before=None, after=None, context=None,
+                       head_limit=_DEFAULT_HEAD_LIMIT, multiline=False:
+                _grep(ctx, pattern, path, output_mode, glob, case_insensitive,
+                      line_numbers, before, after, context, head_limit, multiline),
         ),
         StructuredTool.from_function(
-            name="search_in_file",
-            description=("Find lines in a single file that match a regex. Returns up to 50 "
-                         "matches with line numbers."),
-            func=lambda path, pattern: _search_in_file(ctx, path, pattern),
+            name="Read",
+            description=(
+                f"Read a file with line numbers. Default reads up to {_DEFAULT_READ_LIMIT} "
+                "lines starting at line 1. For larger files, set offset (1-indexed start "
+                "line) and limit. file_path is relative to the repo root."
+            ),
+            func=lambda file_path, offset=1, limit=_DEFAULT_READ_LIMIT:
+                _read(ctx, file_path, offset, limit),
         ),
         StructuredTool.from_function(
-            name="list_dir",
-            description="List entries in a directory under the repo root. Path defaults to '.'.",
-            func=lambda path=".": _list_dir(ctx, path),
+            name="Edit",
+            description=(
+                "Replace exact string old_string with new_string in a file. "
+                "old_string must be unique in the file unless replace_all=True. "
+                "You must Read the file first in this session. "
+                "When the file is the test file, pytest auto-runs in your next turn."
+            ),
+            func=lambda file_path, old_string, new_string, replace_all=False:
+                _edit(ctx, file_path, old_string, new_string, replace_all),
         ),
         StructuredTool.from_function(
-            name="run_generated_tests",
-            description=("Run pytest on the current test file (the file you've been writing). "
-                         "Returns pass/fail/error counts and short tracebacks. "
-                         "Use this to verify a candidate before declaring done."),
-            func=lambda: _run_generated_tests(ctx),
+            name="Write",
+            description=(
+                "Write content to a file (creates or overwrites). "
+                "When writing the test file, markdown fences and relative imports "
+                "are stripped automatically and pytest auto-runs in your next turn. "
+                "Pass the COMPLETE file source — imports + def test_* functions."
+            ),
+            func=lambda file_path, content: _write(ctx, file_path, content),
         ),
     ]

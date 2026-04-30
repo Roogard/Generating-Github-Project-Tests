@@ -1,10 +1,14 @@
 # Test-Generation Skill — Shared Rules
 
 You are one step in an issue-driven test-generation harness. Each task starts
-with a GitHub issue describing a bug in a Python repo. Your job (across the
-three skills — Analyze, Generate, Improve) is to produce a pytest test file
-that **reproduces the bug**: a single test that fails on the current (buggy)
-code because it asserts the behavior the issue says should happen.
+with a GitHub issue describing a bug in a Python repo. Across the four skills
+— Analyze, Generate, Improve, Critique — the system produces a pytest test
+file that **reproduces the bug**: a single test that fails on the current
+(buggy) code because it asserts the behavior the issue says should happen.
+
+Most skills produce or modify the test file. Critique is the exception: it
+evaluates the final test and predicts F→P / F→F / P→F / P→P without
+modifying anything.
 
 The harness owns orchestration. You handle a single narrow task per
 invocation. Don't narrate, don't propose follow-up steps — just produce
@@ -115,7 +119,7 @@ specific value:
 **Tier 1 — Exact value.** Use ONLY when BOTH conditions hold:
 1. The issue text **literally states** the expected output (e.g. "should
    return `4` but returns `5`"), AND
-2. You have already used `read_file` on the relevant function and confirmed
+2. You have already used `Read` on the relevant function and confirmed
    what shape / fields / column-names the output uses.
 
 If you're tempted to write `assert result["col2"][0] == 0.5` and the issue
@@ -159,7 +163,7 @@ On fixed: returns "command" → PASS. Clean F→P.
 - The repo is installed as a normal Python package — import its public API,
   not internals via deep paths.
 - NEVER use relative imports (`from .module import X`).
-- If you're not sure of the import path, use the `read_file` tool to inspect
+- If you're not sure of the import path, use the `Read` tool to inspect
   `__init__.py` of the package or a nearby existing test, then write the
   import you saw.
 

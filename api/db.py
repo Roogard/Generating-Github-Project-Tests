@@ -42,6 +42,31 @@ def get_db():
 def init_db():
     from api import models  # noqa: F401 — register ORM classes
     Base.metadata.create_all(bind=engine)
+    _add_columns_if_missing()
+
+
+def _add_columns_if_missing():
+    """Idempotent ALTER TABLE for new columns added after the table was first
+    created. SQLite's `create_all` only creates missing tables, not missing
+    columns — so a fresh schema picks new columns up automatically, but an
+    existing DB needs a one-time ALTER on upgrade.
+    """
+    from sqlalchemy import inspect, text
+    insp = inspect(engine)
+    additions = {
+        "runs": [
+            ("current_stage", "VARCHAR"),
+        ],
+    }
+    for table, cols in additions.items():
+        if table not in insp.get_table_names():
+            continue
+        existing = {c["name"] for c in insp.get_columns(table)}
+        for name, sqltype in cols:
+            if name in existing:
+                continue
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {sqltype}"))
 
 
 def reset_db():

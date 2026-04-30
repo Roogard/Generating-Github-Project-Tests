@@ -1,48 +1,74 @@
 # Skill: Generate
 
 You receive an issue and a structured test plan (from Analyze). The repo is
-already cloned; you have tools to read its files. Your job is to write a
-pytest test file containing **exactly one test** that reproduces the bug
-described in the issue.
+already cloned; you have Claude Code-shaped tools to navigate and modify
+files: **Glob, Grep, Read, Edit, Write**. Your job is to write a pytest test
+file containing **exactly one test** that reproduces the bug described in
+the issue.
 
-## Output
+## Output — read this carefully
 
-Your final assistant message — the one with no tool calls — must be the
-complete pytest test file as plain text. Start with `import pytest` (and any
-other imports). **No markdown fences, no prose, no explanation.** That
-final message IS the submission; the harness writes it to disk.
+**You MUST call `Write` (or `Edit`, after a Write) on the test file at least
+once.** That file on disk is the ONLY way your test reaches the grader. Code
+emitted in your final assistant message is NOT submitted automatically.
+Skipping the tool means submitting nothing, which is an automatic failure.
+
+**Your final message must be short** — one sentence ("done") confirming
+you've finished. Do **not** put the test code in the final message. The
+harness reads the file on disk; that is the submission.
+
+After every `Write` or `Edit` on the test file, the harness auto-runs pytest
+and appends `[harness] pytest after your test file changed:` (PASS/FAIL/ERROR
++ tracebacks + the all-pass-on-buggy redirect) to your next turn. You don't
+need to ask for results. Use them: revise with `Edit` (preferred for small
+fixes) or `Write` (full rewrite) if your test all-passes on buggy code,
+errors out, or fails for the wrong reason.
+
+**Aim for at least two iterations** — the first Write is a draft, a
+follow-up Edit incorporates pytest feedback. One-shot tests almost always
+F→F or P→P because guessed values rarely match the codebase's real outputs.
 
 ## How to work
 
 1. **First: read the existing tests for this area.** If the test plan
-   includes a `test_path_glob`, feed it to `search_in_repo` (or pass it
-   directly to `read_file` if it's a single file path) and read the
-   matching file(s). Existing tests are your best source for: the right
-   import idioms, the fixture/setup pattern this part of the repo uses,
-   and the **grounded Tier-1 values** (real shape strings, real column
-   names, real exception messages) that the codebase actually produces.
-   Cribbing these costs nothing and prevents F→F kills from invented
-   values.
+   includes a `test_path_glob`, feed it to `Glob` (`Glob('lib/matplotlib/tests/test_axes*.py')`)
+   to find matching files, then `Read` them. Existing tests are your best
+   source for: the right import idioms, the fixture/setup pattern this part
+   of the repo uses, and the **grounded Tier-1 values** (real shape strings,
+   real column names, real exception messages) that the codebase actually
+   produces. Cribbing these costs nothing and prevents F→F kills from
+   invented values.
 
-2. Use `search_in_repo` with the `search_hints` from the test plan to
-   locate the relevant *source* code path. The plan already names
-   symbols/files — feed those to the tool, don't reinvent them.
+2. Use `Grep` with the `search_hints` from the test plan to locate the
+   relevant *source* code path. Default `output_mode='files_with_matches'`
+   gives a paths-only list (use first to narrow); switch to
+   `output_mode='content'` to see matching lines. The plan already names
+   symbols/files — feed those to Grep, don't reinvent them.
 
-3. Use `read_file` on the located source file(s) to understand:
+3. Use `Read` on the located source file(s) to understand:
    - The public API surface (what to import, what to call).
    - The function signature so you call it correctly. **You don't need to
      understand the implementation** — and you should resist the urge to
      read it deeply, because tracing the buggy body re-encodes the bug.
 
-4. Use `run_generated_tests` to verify your test file imports and runs
-   before you submit. This is how you catch import errors, missing
-   fixtures, AttributeError on construction. It's NOT a way to check
-   "does my test pass" — your test SHOULD fail on the buggy code; that's
-   the point. What you're checking is that pytest can collect and execute
-   it without infrastructure errors.
+4. **Iterate via Write / Edit on the test file.** Call `Write` with your
+   draft, then read the `[harness] pytest after your test file changed:`
+   block on the next turn:
+   - **All-pass on the buggy code = FAIL.** The harness will say so explicitly.
+     Your test isn't reproducing the bug — wrong API, wrong trigger inputs,
+     or you asserted what the buggy code does instead of what the issue says
+     should happen. **Rewrite (or Edit a key assertion) to make at least one
+     test FAIL on the current code in the way the issue predicts.**
+   - FAIL/ERROR with a wrong-import / AttributeError / TypeError diagnostic =
+     fix the construction with `Edit` (cheaper than rewriting). Existing tests
+     in the repo are the best reference.
+   - FAIL with an `AssertionError` whose error reads like the issue's predicted
+     bug = **KEEP IT.** That's your F→P detection. Don't silence it.
 
-5. When the test file is ready, emit it as your final message with no tool
-   calls.
+5. When you're satisfied (at least one F→P-shaped failure on the buggy code),
+   emit a short final message ("done") with no tool calls. The harness submits
+   whatever's on disk from your last Write/Edit. **If you never wrote the test
+   file, you submit nothing.** Do not skip the tool.
 
 ## Reading the test plan
 
@@ -55,7 +81,7 @@ final message IS the submission; the harness writes it to disk.
 - `reproducer_steps` — translate these into the body of your test.
 - `suggested_assertions` — pick the one that best matches the issue's
   expected behavior. Use it directly when its tier and quote match.
-- `search_hints` — feed to `search_in_repo` first.
+- `search_hints` — feed to `Grep` first.
 - `risk_notes` — explicit F→F traps to avoid.
 
 ## What to write
@@ -96,7 +122,7 @@ For "wrong output" issues, prefer Tier 2 (the relationship) over Tier 1
 on the fixed code if your guessed array doesn't match.
 
 If you DO want to write a Tier 1 exact-value assertion, you must first
-have run `read_file` on the function the issue is about, AND the value
+have run `Read` on the function the issue is about, AND the value
 must come from the issue text or from an existing test in the repo —
 never from your own mental model of what the code "should" return.
 

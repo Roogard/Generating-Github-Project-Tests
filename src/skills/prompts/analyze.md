@@ -73,7 +73,7 @@ Return a single JSON object with exactly these keys. No prose around it.
   - **Default to Tier 3 if available, then Tier 2, then Tier 1.** Generate
     will pick the lowest-risk option that matches the issue.
 
-- **`search_hints`**: regexes / symbol names Generate should `search_in_repo`
+- **`search_hints`**: regexes / symbol names Generate should `Grep`
   for. Example: if the issue mentions "the QDP reader," include `"_line_type"`
   or `"qdp"` so Generate can find the relevant file fast. Be specific; vague
   hints waste Generate's tool budget.

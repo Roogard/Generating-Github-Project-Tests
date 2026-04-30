@@ -167,7 +167,12 @@ class HarnessContext:
     llm_calls_used: int = 0
     analysis: dict | None = None
     last_feedback: "Feedback | None" = None
+    last_critique: dict | None = None
     attempts: list[dict] = field(default_factory=list)
+
+    # Files the agent has Read this session. Edit refuses to operate on files
+    # not in this set — mirrors Claude Code's "must Read before Edit" rule.
+    read_paths: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         os.makedirs(self.test_dir, exist_ok=True)
@@ -202,6 +207,9 @@ class HarnessContext:
         code = _strip_relative_imports(code)
         with open(self.test_file_path, "w", encoding="utf-8") as f:
             f.write(code)
+        # The file is now "known" to the agent — Improve's prompt embeds it,
+        # so subsequent Edit calls should be allowed without an explicit Read.
+        self.read_paths.add(str(Path(self.test_file_path).resolve()))
         return len(code.splitlines())
 
     def read_test_file(self) -> str:
@@ -218,6 +226,7 @@ def run_harness(
     out_dir: str,
     runtime,  # src.runtime.base.Runtime — typed loosely to avoid an import cycle
     *,
+    run_id: int | None = None,
     issue_text: str,
     issue_title: str = "",
     hints_text: str = "",
@@ -228,13 +237,31 @@ def run_harness(
 ) -> dict:
     """Run the issue-driven harness for one (repo, issue) task.
 
+    `run_id` (optional): when provided, the harness emits live pipeline-stage
+    updates against the matching Run row so the webapp can display
+    'Generating' / 'Critiquing' / etc. while polling.
+
     Returns a persist-ready dict (see `finalize`).
     """
     # Lazy skill import — skills depend on HarnessContext defined above; importing
     # them at module top-level can re-enter on package init.
     from src.skills.analyze import AnalyzeSkill
+    from src.skills.critique import CritiqueSkill
     from src.skills.generate import GenerateSkill
     from src.skills.improve import ImproveSkill
+
+    def _stage(name: str | None) -> None:
+        """Record the live pipeline stage. No-op when run_id is None
+        (e.g. direct test invocations without a DB row)."""
+        if run_id is None:
+            return
+        try:
+            from src.persist import update_run_stage
+            update_run_stage(run_id, name)
+        except Exception as e:
+            # Stage updates are diagnostic — don't let a DB hiccup
+            # break the harness. Log and continue.
+            print(f"  [harness] stage update failed: {type(e).__name__}: {e}")
 
     if not issue_text or not issue_text.strip():
         raise ValueError("run_harness requires non-empty issue_text")
@@ -259,30 +286,37 @@ def run_harness(
           f"agentic_cap={agentic_turn_cap}")
 
     # 1. Analyze — single LLM call, builds a structured test plan from the issue.
+    _stage("analyze")
     try:
         AnalyzeSkill().run(ctx)
     except BudgetExhausted:
+        _stage(None)
         return finalize(ctx)
     except Exception as e:
         print(f"  [harness] analyze error: {type(e).__name__}: {e} — proceeding without plan")
         traceback.print_exc()
 
-    # 2. Generate — agentic. Agent explores via tools, writes test file, exits
-    # when it emits a final reply with no tool calls. The skill itself runs
-    # write_test_file as part of its loop (via the run_generated_tests tool's
-    # pre-commit check); it returns the final candidate so the harness can
-    # ensure it's persisted.
+    # 2. Generate — agentic. Agent explores via tools (Glob/Grep/Read) and
+    # writes the test file via Write/Edit; the harness auto-runs pytest after
+    # any modification to ctx.test_file_path. The skill returns the final
+    # candidate so the harness can ensure it's persisted (covers the case
+    # where the agent emitted code only in its final message instead of via
+    # a tool call).
+    _stage("generate")
     try:
         final_code = GenerateSkill().run(ctx)
         ctx.write_test_file(final_code)
     except BudgetExhausted:
+        _stage(None)
         return finalize(ctx)
     except ValueError as e:
         print(f"  [harness] generate produced empty code: {e}")
+        _stage(None)
         return finalize(ctx)
     except Exception as e:
         print(f"  [harness] generate error: {type(e).__name__}: {e}")
         traceback.print_exc()
+        _stage(None)
         return finalize(ctx)
 
     # 3. Execute → Feedback
@@ -298,6 +332,7 @@ def run_harness(
     # still have budget. One pass — if it doesn't fix things, we accept
     # whatever we have.
     if feedback.next_action == "improve" and ctx.llm_calls_used < ctx.llm_budget:
+        _stage("improve_infra")
         try:
             improved = ImproveSkill().run(ctx)
             ctx.write_test_file(improved)
@@ -315,6 +350,60 @@ def run_harness(
             print(f"  [harness] improve error: {type(e).__name__}: {e}")
             traceback.print_exc()
 
+    # 5. Critique — single LLM call. Predicts F→P / F→F / P→F / P→P from the
+    # final test + pytest result. Persisted to ctx.last_critique and
+    # ctx.attempts. Skipped if there's no test file or no remaining budget.
+    if os.path.isfile(ctx.test_file_path) and ctx.llm_calls_used < ctx.llm_budget:
+        _stage("critique")
+        try:
+            CritiqueSkill().run(ctx)
+            crit = ctx.last_critique or {}
+            print(f"  [harness] after critique: predicted={crit.get('expected_transition')}  "
+                  f"confidence={crit.get('confidence')}  "
+                  f"needs_revision={crit.get('needs_revision')}  "
+                  f"used={ctx.llm_calls_used}/{ctx.llm_budget}")
+        except BudgetExhausted:
+            pass
+        except Exception as e:
+            print(f"  [harness] critique error: {type(e).__name__}: {e} — skipping")
+            traceback.print_exc()
+
+    # 6. Critique-driven Improve. If Critique predicted a non-F2P outcome
+    # and flagged needs_revision, fire Improve in semantic mode — the agent
+    # gets the critique's concerns + revision_focus and may re-explore the
+    # repo before patching. Gated on remaining budget (need at least a few
+    # turns' headroom — skip if budget is too tight).
+    crit = ctx.last_critique or {}
+    budget_remaining = ctx.llm_budget - ctx.llm_calls_used
+    if (crit.get("needs_revision")
+            and budget_remaining >= 2  # at minimum: one tool turn + one final
+            and os.path.isfile(ctx.test_file_path)):
+        # ImproveSkill picks mode from ctx state. Clear last_feedback's
+        # infrastructure-problem signal so it routes to semantic mode (the
+        # critique-driven path), not infrastructure.
+        _stage("improve_semantic")
+        prior_feedback = ctx.last_feedback
+        ctx.last_feedback = None
+        try:
+            improved = ImproveSkill().run(ctx)
+            ctx.write_test_file(improved)
+            # Re-execute pytest so finalize sees the post-improve result.
+            ctx.last_feedback = _execute_and_feedback(ctx)
+            print(f"  [harness] after critique-improve: "
+                  f"failures={len(ctx.last_feedback.failures)}  "
+                  f"errors={len(ctx.last_feedback.errors)}  "
+                  f"used={ctx.llm_calls_used}/{ctx.llm_budget}")
+        except BudgetExhausted:
+            ctx.last_feedback = prior_feedback
+        except ValueError as e:
+            print(f"  [harness] critique-improve produced empty code: {e}")
+            ctx.last_feedback = prior_feedback
+        except Exception as e:
+            print(f"  [harness] critique-improve error: {type(e).__name__}: {e}")
+            traceback.print_exc()
+            ctx.last_feedback = prior_feedback
+
+    _stage(None)
     return finalize(ctx)
 
 
@@ -347,6 +436,7 @@ def finalize(ctx: HarnessContext) -> dict:
         "turns_used": ctx.llm_calls_used,
         "finish_reason": _derive_finish_reason(ctx),
         "history": list(ctx.attempts),
+        "critique": ctx.last_critique,
     }
 
     fb = ctx.last_feedback

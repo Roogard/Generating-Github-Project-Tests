@@ -93,7 +93,7 @@ def run_batch(
 
             for i, task in enumerate(batch.tasks):
                 print(f"\n[{i + 1}/{total}] {task.label}")
-                result = run_agent(task)
+                result = run_agent(task, run_id=current_run_id)
                 oracle_grade = grade_with_oracle(task, result)
                 persist_function_result(current_run_id, task, result, oracle_grade)
                 update_run_progress(current_run_id, current=i + 1, total=total)
