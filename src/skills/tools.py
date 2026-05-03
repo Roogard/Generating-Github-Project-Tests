@@ -11,7 +11,7 @@ Five tools (PascalCase to match Claude Code):
     Exact string replace. Requires the file to have been Read this session.
   Write(file_path, content)
     Full file write. When the target is ctx.test_file_path, markdown fences
-    and relative imports are stripped via ctx.write_test_file.
+    and relative imports are stripped via src.harness.write_test_file.
 
 There is no run-tests tool: when Write or Edit modifies ctx.test_file_path,
 the harness auto-runs pytest and injects the result into the next LLM turn
@@ -28,7 +28,7 @@ from pathlib import Path
 
 from langchain_core.tools import StructuredTool
 
-from src.harness import HarnessContext
+from src.harness import HarnessContext, write_test_file
 
 
 _DEFAULT_READ_LIMIT = 2000
@@ -265,16 +265,15 @@ def _write(ctx: HarnessContext, file_path: str, content: str) -> str:
     if content is None or not content.strip():
         return "ERROR: content is empty."
 
-    # Writing the test file routes through the harness's write_test_file so
+    # Writing the test file routes through src.harness.write_test_file so
     # markdown fences and relative imports get stripped (preserves an existing
     # protection that matters for the LLM's submission).
     test_file_resolved = Path(ctx.test_file_path).resolve()
     if target == test_file_resolved:
         try:
-            n = ctx.write_test_file(content)
+            n = write_test_file(ctx, content)
         except ValueError as e:
             return f"ERROR: {e}."
-        ctx.read_paths.add(str(target))
         return f"wrote {n} lines to {file_path}."
 
     target.parent.mkdir(parents=True, exist_ok=True)

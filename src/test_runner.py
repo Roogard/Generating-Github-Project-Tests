@@ -47,6 +47,23 @@ def _runtime_test_path(test_file: str, runtime: Runtime) -> str:
     return runtime.translate(os.path.abspath(test_file))
 
 
+def _pytest_config_args(test_file: str, runtime: Runtime) -> list[str]:
+    """Force pytest to use the harness's pytest.ini (sibling to the test
+    file), not the target repo's setup.cfg / pyproject.toml.
+
+    Repos often set `filterwarnings = error` or aggressive `addopts` that
+    break collection of our independently-written test. SwtBench is opted
+    out — there the repo's config is the intended one (the official sweb
+    image expects to run pytest the same way the project does).
+    """
+    if runtime.in_image_test_file_path():
+        return []
+    host_ini = os.path.join(os.path.dirname(os.path.abspath(test_file)), "pytest.ini")
+    if not os.path.isfile(host_ini):
+        return []
+    return ["-c", runtime.translate(host_ini)]
+
+
 def _collect_nodeids(test_file, repo_dir, runtime: Runtime):
     """Ask pytest which test functions the file contains.
 
@@ -61,6 +78,7 @@ def _collect_nodeids(test_file, repo_dir, runtime: Runtime):
     runtime_test_file = _runtime_test_path(test_file, runtime)
     result = runtime.exec(
         [runtime.python_bin, "-m", "pytest", runtime_test_file,
+         *_pytest_config_args(test_file, runtime),
          "--collect-only", "-q", "--no-header"],
         cwd=repo_dir, timeout=30, env=_pytest_env(repo_dir, runtime),
     )
@@ -103,6 +121,7 @@ def _run_tests_isolated(test_file, repo_dir, runtime: Runtime,
         report_host = runtime.tempfile_path(suffix=".json")
         report_runtime = runtime.translate(report_host)
         cmd = [runtime.python_bin, "-m", "pytest", nodeid,
+               *_pytest_config_args(test_file, runtime),
                "--json-report", f"--json-report-file={report_runtime}",
                f"--timeout={per_test_timeout}",
                "-q", "--tb=short", "--no-header"]
@@ -189,6 +208,7 @@ def _run_tests_batch(test_file, repo_dir, runtime: Runtime, timeout):
 
     result = runtime.exec(
         [runtime.python_bin, "-m", "pytest", runtime_test_file,
+         *_pytest_config_args(test_file, runtime),
          "--json-report", f"--json-report-file={report_runtime}",
          "-q", "--tb=short", "--no-header"],
         cwd=repo_dir, timeout=timeout, env=env,

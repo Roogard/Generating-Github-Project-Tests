@@ -12,10 +12,12 @@ if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
 
 from api.db import init_db
 from api.routes import router, analytics_router
+from src.logging import configure_logging
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    configure_logging()
     init_db()
     yield
 

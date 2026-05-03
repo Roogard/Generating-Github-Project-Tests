@@ -70,7 +70,14 @@ src/
   oracle.py          SWT-bench classifier + buggy↔fixed transitions + grade_with_oracle (post-hoc only)
   persist.py         Single persistence path (Run + Function rows)
   types.py           AgentTask, AgentResult, OracleGrade, RunBatch
-  harness.py         HarnessContext + Feedback + run_harness (Analyze → Generate → Improve(infra) → Critique → Improve(semantic) → Finalize)
+  config.py          Centralized env-var configuration (single grep target)
+  logging.py         Structured logging via structlog (console-pretty or JSON)
+  text_utils.py      Code-fence stripping + truncation (single home, shared by harness/agentic/base)
+  harness/
+    __init__.py      Back-compat re-exports
+    state.py         HarnessContext + BudgetExhausted + read/write_test_file
+    feedback.py      Feedback + build_feedback (pytest result → next_action gate)
+    pipeline.py      run_harness (Analyze → Generate → Improve(infra) → Critique → Improve(semantic) → Finalize)
   inputs/
     base.py          InputAdapter ABC + PRESETS
     repo.py          RepoAdapter — (URL, issue_text) → AgentTask
@@ -145,6 +152,7 @@ F→P / F→F / P→F / P→P numbers per project and per provider.
 | Field | Meaning |
 |-------|---------|
 | `tests_passed` / `tests_failed` | Pytest outcomes on the buggy code |
+| `tests_errored` | Pytest collection / setup errors on the buggy code |
 | `patch_applied` | The gold patch applied cleanly (benchmark only) |
 | `f2p` | **F→P — fail on buggy, pass on fixed (true positives)** |
 | `f2f` | F→F — fail on both (spurious / false positives — the killer) |

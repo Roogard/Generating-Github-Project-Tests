@@ -83,7 +83,7 @@ If Docker isn't available, the harness falls back to a host subprocess (uv venv 
 | Prefix | File | Purpose |
 |---|---|---|
 | `/api/runs` | [api/routes.py](api/routes.py) | Create / list / inspect / download / delete runs (single endpoint dispatched by `source: 'repo' \| 'swtbench'`) |
-| `/api/analytics` | [api/browser_routes.py](api/browser_routes.py) | Read-only summary feeding the Analytics page |
+| `/api/analytics` | [api/routes.py](api/routes.py) | Read-only summary feeding the Analytics page |
 
 `POST /api/runs/` body (issue-driven):
 
@@ -98,6 +98,7 @@ If Docker isn't available, the harness falls back to a host subprocess (uv venv 
 | Field | Meaning |
 |---|---|
 | `tests_passed` / `tests_failed` | Pytest outcomes on the buggy code |
+| `tests_errored` | Pytest collection / setup errors on the buggy code |
 | `patch_applied` | The gold patch applied cleanly (benchmark only) |
 | `f2p` | **F→P — fail on buggy, pass on fixed (true positives)** |
 | `f2f` | F→F — fail on both (spurious / false positives) |

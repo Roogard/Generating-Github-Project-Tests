@@ -18,12 +18,20 @@ from typing import Iterator
 from dotenv import load_dotenv
 
 from src.inputs.base import InputAdapter, PRESETS, force_rmtree
+from src.logging import get_logger
 from src.runtime.factory import build_runtime
 from src.types import AgentTask, RunBatch
 
 
+logger = get_logger(__name__)
+
+
 def _clone_repo(url: str, target_dir: str) -> None:
-    subprocess.run(["git", "clone", "--depth=1", url, target_dir], check=True)
+    # --filter=blob:none, not --depth=1: setuptools-scm and similar version
+    # plugins need git tags / commit history to resolve a version, and
+    # shallow clones drop both. Partial clone fetches full refs while
+    # deferring blobs until checkout — comparable speed, no broken builds.
+    subprocess.run(["git", "clone", "--filter=blob:none", url, target_dir], check=True)
 
 
 load_dotenv()
@@ -75,9 +83,9 @@ def _setup_runtime(host_root: str, repo_dir: str, *, install_deps: bool):
         install_result = runtime.install_python_deps(pkgs, timeout=600)
         if install_result.returncode != 0:
             tail = install_result.stderr.strip().splitlines()[-8:]
-            print(f"  [repo-adapter] runtime deps install FAILED (rc={install_result.returncode}):")
-            for line in tail:
-                print(f"    {line[:200]}")
+            logger.warning("repo_adapter.install_failed",
+                           returncode=install_result.returncode,
+                           stderr_tail=[line[:200] for line in tail])
     return runtime, install_result
 
 
@@ -127,10 +135,10 @@ class RepoAdapter(InputAdapter):
         # Idempotent clone — Windows holds read-only attrs on .git pack files
         # that defeat ignore_errors=True. force_rmtree chmods them out.
         force_rmtree(repo_dir)
-        print(f"\nCloning {self.repo_url}...")
+        logger.info("repo_adapter.clone_start", url=self.repo_url)
         _clone_repo(self.repo_url, repo_dir)
 
-        print("Building runtime ...")
+        logger.info("repo_adapter.runtime_build")
         runtime, install_result = _setup_runtime(
             run_dir, repo_dir, install_deps=self.install_deps,
         )
@@ -146,7 +154,7 @@ class RepoAdapter(InputAdapter):
         }
 
         if install_result is not None and install_result.returncode != 0:
-            tail = (install_result.stderr or install_result.stdout).strip().splitlines()[-12:]
+            tail = (install_result.stderr or install_result.stdout).strip().splitlines()[-50:]
             err_msg = "Repo dependencies failed to install:\n" + "\n".join(tail)
             run_metadata["_install_error"] = err_msg
             yield RunBatch(run_metadata=run_metadata, tasks=[])

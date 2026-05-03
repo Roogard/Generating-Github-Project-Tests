@@ -17,8 +17,11 @@ import os
 import shlex
 import subprocess
 
+from src.logging import get_logger
 from src.runtime.base import Runtime, RuntimeResult
 
+
+logger = get_logger(__name__)
 
 _CONTAINER_ROOT = "/work"
 _VENV_REL = ".venv"
@@ -38,7 +41,12 @@ class DockerRuntime(Runtime):
 
         if install_deps:
             # Build the venv inside the mounted volume so it persists across
-            # subsequent stateless docker-run invocations.
+            # subsequent stateless docker-run invocations. With `docker run
+            # --rm`, anything installed into the container's site-packages
+            # is discarded the moment the command exits — so without this
+            # venv on the mount, `pip install` writes to oblivion and the
+            # next `docker run` for pytest finds nothing installed. There
+            # is no useful fallback here: fail loud.
             r = self._docker_run(
                 ["python", "-m", "venv", f"{_CONTAINER_ROOT}/{_VENV_REL}"],
                 cwd=_CONTAINER_ROOT, timeout=60,
@@ -46,8 +54,22 @@ class DockerRuntime(Runtime):
             if r.returncode == 0:
                 self._venv_built = True
             else:
-                print(f"  [runtime/docker] venv build failed: {r.stderr.strip()[:300]}; "
-                      f"will use container's system python")
+                logger.error("runtime_docker.venv_build_failed",
+                             returncode=r.returncode,
+                             timed_out=r.timed_out,
+                             stdout_tail=(r.stdout or "").strip()[-500:],
+                             stderr_tail=(r.stderr or "").strip()[-500:])
+                raise RuntimeError(
+                    f"Docker venv build failed (returncode={r.returncode}, "
+                    f"timed_out={r.timed_out}). With `docker run --rm` the "
+                    "venv MUST live on the mounted volume — there is no "
+                    "viable fallback. Common causes: (1) the harness's "
+                    "subprocess was killed by an external reloader (e.g. "
+                    "uvicorn --reload watching the project root — exclude "
+                    "eval_output/ or use --reload-dir api --reload-dir src); "
+                    "(2) the Docker daemon went away mid-call. "
+                    f"stderr_tail={(r.stderr or '').strip()[-300:]!r}"
+                )
 
     # ── path translation ────────────────────────────────────────────────────
 

@@ -3,20 +3,22 @@
 Default is Docker when the daemon is reachable AND the image exists; falls
 back to LocalRuntime otherwise. Override via env var `GGPT_RUNTIME` set to
 either `docker` or `local`. Image name override via `GGPT_DOCKER_IMAGE`.
+Both env vars are read by `src.config` at import time.
 """
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from enum import StrEnum
 
+from src import config
+from src.logging import get_logger
 from src.runtime.base import Runtime
 from src.runtime.docker import DockerRuntime
 from src.runtime.local import LocalRuntime
 
 
-_DEFAULT_IMAGE = "ggpt-runtime"
+logger = get_logger(__name__)
 
 
 class RuntimeMode(StrEnum):
@@ -49,17 +51,16 @@ def build_runtime(
 
     Resolution order:
       1. Explicit `mode` argument (caller forces docker / local)
-      2. `GGPT_RUNTIME` env var
+      2. `config.RUNTIME` (from env var GGPT_RUNTIME)
       3. Docker if image is built and daemon is reachable
       4. Local fallback
     """
-    image = os.environ.get("GGPT_DOCKER_IMAGE", _DEFAULT_IMAGE)
+    image = config.DOCKER_IMAGE
 
     if mode is None:
-        env_mode = (os.environ.get("GGPT_RUNTIME") or "").strip().lower()
-        if env_mode == "docker":
+        if config.RUNTIME == "docker":
             mode = RuntimeMode.DOCKER
-        elif env_mode == "local":
+        elif config.RUNTIME == "local":
             mode = RuntimeMode.LOCAL
 
     if mode == RuntimeMode.DOCKER:
@@ -69,8 +70,8 @@ def build_runtime(
 
     # Auto-detect.
     if _docker_available(image):
-        print(f"  [runtime] using DockerRuntime (image={image!r})")
+        logger.info("runtime.select", kind="docker", image=image)
         return DockerRuntime(host_root, image=image, install_deps=install_deps)
-    print(f"  [runtime] using LocalRuntime (docker image {image!r} not found; "
-          f"set GGPT_RUNTIME=docker after `docker build -f Dockerfile.runtime -t {image} .`)")
+    logger.info("runtime.select", kind="local", reason="docker_image_not_found",
+                image_hint=image)
     return LocalRuntime(host_root, install_deps=install_deps)

@@ -24,9 +24,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Iterator
 
+from src.logging import get_logger
 from src.runtime.base import Runtime
 from src.test_runner import run_tests as _pytest_run
 from src.types import AgentResult, AgentTask, OracleGrade
+
+
+logger = get_logger(__name__)
 
 
 def _name_only(test_nodeid: str) -> str:
@@ -110,7 +114,8 @@ def _apply_via_git_patch(repo_dir: str, runtime: Runtime, gold_patch: str) -> It
                 capture_output=True, text=True,
             )
             if apply.returncode != 0:
-                print(f"  [oracle] git apply failed: {apply.stderr.strip()[:300]}")
+                logger.warning("oracle.git_apply_failed",
+                               stderr=apply.stderr.strip()[:300])
                 yield False
                 return
             try:
@@ -121,7 +126,9 @@ def _apply_via_git_patch(repo_dir: str, runtime: Runtime, gold_patch: str) -> It
                     capture_output=True, text=True,
                 )
                 if revert.returncode != 0:
-                    print(f"  [oracle] git apply -R failed: {revert.stderr.strip()[:200]} — hard-resetting")
+                    logger.warning("oracle.git_revert_failed",
+                                   stderr=revert.stderr.strip()[:200],
+                                   action="hard_reset")
                     subprocess.run(["git", "-C", repo_dir, "checkout", "--", "."],
                                    capture_output=True)
     finally:
@@ -232,7 +239,7 @@ def grade_with_oracle(task: AgentTask, result: AgentResult) -> OracleGrade | Non
             timeout=task.timeout, per_test_timeout=task.per_test_timeout,
         )
     except Exception as e:
-        print(f"  [grader] oracle failed: {type(e).__name__}: {e}")
+        logger.error("oracle.grade_failed", err_type=type(e).__name__, err=str(e))
         return None
 
     return OracleGrade(

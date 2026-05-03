@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import json
 
-from src.harness import Feedback, HarnessContext
+from src.harness import Feedback, HarnessContext, read_test_file
 from src.skills.base import Skill, format_intent_section
 
 
@@ -53,7 +53,7 @@ class CritiqueSkill(Skill):
             ctx.attempts.append({"skill": self.name, "ok": False, "reason": "no issue"})
             return ctx.last_critique
 
-        test_code = ctx.read_test_file()
+        test_code = read_test_file(ctx)
         if not test_code.strip():
             ctx.last_critique = {"_skipped": "no test file"}
             ctx.attempts.append({"skill": self.name, "ok": False, "reason": "no test"})

@@ -32,7 +32,11 @@ import os
 import shlex
 import subprocess
 
+from src.logging import get_logger
 from src.runtime.docker import DockerRuntime, _CONTAINER_ROOT
+
+
+logger = get_logger(__name__)
 
 
 _TESTBED = "/testbed"
@@ -139,7 +143,8 @@ class SwtBenchRuntime(DockerRuntime):
             self.image = derived
             return
 
-        print(f"  [swtbench] building derived image {derived} (one-time, ~30s)")
+        logger.info("swtbench.derived_image_build", tag=derived,
+                    note="one-time, ~30s")
         # Use the conda env's pip directly. Pinning matters: pytest-json-report
         # is sensitive to pytest version; let pip resolve constraints against
         # whatever pytest the image has.

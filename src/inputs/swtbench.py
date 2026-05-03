@@ -20,8 +20,12 @@ import tempfile
 from typing import Iterator
 
 from src.inputs.base import InputAdapter, PRESETS
+from src.logging import get_logger
 from src.runtime.swtbench import SwtBenchRuntime
 from src.types import AgentTask, RunBatch
+
+
+logger = get_logger(__name__)
 
 
 _HF_DATASETS = {
@@ -102,20 +106,23 @@ class SwtBenchAdapter(InputAdapter):
         self.use_official_images = use_official_images
 
     def iter_batches(self) -> Iterator[RunBatch]:
-        print(f"\n[swtbench] loading {_HF_DATASETS[self.dataset]} split=test ...")
+        logger.info("swtbench.dataset_load", dataset=_HF_DATASETS[self.dataset], split="test")
         rows = _load_dataset(self.dataset)
         if self.instance_ids:
             rows = [r for r in rows if r.get("instance_id") in self.instance_ids]
         if self.instance_limit:
             rows = rows[: self.instance_limit]
 
-        print(f"[swtbench] dataset={self.dataset} instances={len(rows)} "
-              f"llm_calls<={self.preset_cfg['max_llm_calls']} "
-              f"turn_cap={self.preset_cfg.get('agentic_turn_cap', 6)} "
-              f"official_images={self.use_official_images}")
+        logger.info("swtbench.batch_start",
+                    dataset=self.dataset,
+                    instances=len(rows),
+                    max_llm_calls=self.preset_cfg["max_llm_calls"],
+                    turn_cap=self.preset_cfg.get("agentic_turn_cap", 6),
+                    official_images=self.use_official_images)
 
         for i, row in enumerate(rows, 1):
-            print(f"\n[{i}/{len(rows)}]", end=" ")
+            logger.info("swtbench.instance", index=i, total=len(rows),
+                        instance_id=row.get("instance_id"))
             yield from self._batch_for_instance(row)
 
     def _batch_for_instance(self, row: dict) -> Iterator[RunBatch]:
@@ -126,7 +133,8 @@ class SwtBenchAdapter(InputAdapter):
         problem_statement = row.get("problem_statement") or ""
         hints_text = row.get("hints_text") or ""
 
-        print(f"{'─' * 55}\n  {instance_id}  ({repo}@{base_commit[:7]})")
+        logger.info("swtbench.instance_setup",
+                    instance_id=instance_id, repo=repo, base_commit=base_commit[:7])
 
         run_metadata = {
             "repo_url": f"swtbench:{instance_id}",
@@ -164,7 +172,7 @@ class SwtBenchAdapter(InputAdapter):
             _clone_at(repo, base_commit, repo_dir)
 
             if self.use_official_images:
-                print(f"  [runtime] pulling/using official image for {instance_id} ...")
+                logger.info("swtbench.official_image_pull", instance_id=instance_id)
                 runtime = SwtBenchRuntime(host_root, instance_id, install_deps=True)
             else:
                 # Generic ggpt-runtime — only works for repos that build cleanly
@@ -200,7 +208,8 @@ class SwtBenchAdapter(InputAdapter):
             )
             yield RunBatch(run_metadata=run_metadata, tasks=[task])
         except Exception as e:
-            print(f"  ERROR setting up instance: {type(e).__name__}: {e}")
+            logger.error("swtbench.instance_setup_error",
+                         err_type=type(e).__name__, err=str(e))
             run_metadata["_skip_reason"] = f"setup_error: {type(e).__name__}: {e}"
             run_metadata["_host_root"] = host_root
             run_metadata["runtime"] = runtime

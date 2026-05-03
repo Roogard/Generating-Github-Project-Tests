@@ -17,9 +17,15 @@ from __future__ import annotations
 import os
 import traceback
 
+import structlog
+
 from src.harness import run_harness
+from src.logging import configure_logging, get_logger
 from src.runtime.swtbench import SwtBenchRuntime
 from src.types import AgentResult, AgentTask
+
+
+logger = get_logger(__name__)
 
 
 def run_agent(task: AgentTask, *, run_id: int | None = None) -> AgentResult:
@@ -32,6 +38,9 @@ def run_agent(task: AgentTask, *, run_id: int | None = None) -> AgentResult:
     Caller (the runner) owns the runtime lifecycle — `runtime.shutdown()`
     is called once after all tasks for a runtime have been processed.
     """
+    configure_logging()
+    structlog.contextvars.bind_contextvars(run_id=run_id, label=task.label)
+
     if not task.issue_text or not task.issue_text.strip():
         raise ValueError("AgentTask requires non-empty issue_text — the agent is issue-driven")
 
@@ -59,9 +68,11 @@ def run_agent(task: AgentTask, *, run_id: int | None = None) -> AgentResult:
             per_test_timeout=task.per_test_timeout,
         )
     except Exception as e:
-        print(f"  ERROR in harness: {type(e).__name__}: {e}")
-        traceback.print_exc()
+        logger.error("agent.harness_error", err_type=type(e).__name__, err=str(e),
+                     traceback=traceback.format_exc())
         return _empty_result()
+    finally:
+        structlog.contextvars.clear_contextvars()
 
     return AgentResult(
         test_file_path=harness_result.get("test_file_path", ""),

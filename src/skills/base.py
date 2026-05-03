@@ -1,8 +1,13 @@
 """Skill base class — narrow LLM call wrappers.
 
-Each skill loads its prompt (shared preamble + own task description), runs one
-LLM invocation, and returns a stripped response. Skills don't run subprocesses,
-don't write files, and don't call the oracle — the harness owns side effects.
+Each skill loads its prompt (shared preamble + own task description) and
+produces a response. Single-call skills (Analyze, Critique) invoke the LLM
+once and return a stripped string. Agentic skills (Generate, Improve) loop
+through the tool kit until the model emits a final message with no tool
+calls — see src/skills/agentic.py.
+
+Skills don't run subprocesses, don't write files, and don't call the oracle
+— the harness owns side effects.
 """
 from __future__ import annotations
 
@@ -17,7 +22,6 @@ from src.llm import cached_system_message, get_llm
 
 
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
-_FENCE_RE = re.compile(r"^```(?:python)?\s*\n(.*?)```\s*$", re.DOTALL)
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*\n(.*?)```", re.DOTALL)
 _PROMPT_CACHE: dict[str, str] = {}
 
@@ -52,11 +56,6 @@ class Skill:
         if isinstance(content, list):  # some providers return a list of parts
             content = "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content)
         return content or ""
-
-    @staticmethod
-    def _strip_code_fence(text: str) -> str:
-        m = _FENCE_RE.match(text.strip())
-        return m.group(1) if m else text
 
     @staticmethod
     def _parse_json_block(text: str) -> dict:

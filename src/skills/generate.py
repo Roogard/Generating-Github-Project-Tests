@@ -14,10 +14,11 @@ from __future__ import annotations
 import json
 import os
 
-from src.harness import HarnessContext
+from src.harness import HarnessContext, read_test_file
 from src.skills.agentic import run_agentic
 from src.skills.base import Skill, format_intent_section
 from src.skills.tools import build_tools
+from src.text_utils import strip_code_fence
 
 
 def _format_plan(analysis: dict) -> str:
@@ -74,11 +75,11 @@ class GenerateSkill(Skill):
 
         # Submission rule: file on disk wins (agent used Write/Edit); fall back
         # to final-message text only if the agent never wrote.
-        if os.path.isfile(ctx.test_file_path) and ctx.read_test_file().strip():
-            code = ctx.read_test_file()
+        if os.path.isfile(ctx.test_file_path) and read_test_file(ctx).strip():
+            code = read_test_file(ctx)
             submission_source = "disk"
         else:
-            code = self._strip_code_fence(result.final_text)
+            code = strip_code_fence(result.final_text)
             submission_source = "final_message"
 
         ctx.attempts.append({

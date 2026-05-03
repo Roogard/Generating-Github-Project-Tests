@@ -24,6 +24,7 @@ import time
 from api.models import RunStatus
 from src.agent import run_agent
 from src.inputs.base import InputAdapter, force_rmtree
+from src.logging import get_logger
 from src.oracle import grade_with_oracle
 from src.persist import (
     persist_function_result,
@@ -31,6 +32,9 @@ from src.persist import (
     persist_run_start,
     update_run_progress,
 )
+
+
+logger = get_logger(__name__)
 
 
 def run_batch(
@@ -92,7 +96,7 @@ def run_batch(
             update_run_progress(current_run_id, current=0, total=total)
 
             for i, task in enumerate(batch.tasks):
-                print(f"\n[{i + 1}/{total}] {task.label}")
+                logger.info("runner.task_start", index=i + 1, total=total, label=task.label)
                 result = run_agent(task, run_id=current_run_id)
                 oracle_grade = grade_with_oracle(task, result)
                 persist_function_result(current_run_id, task, result, oracle_grade)
@@ -105,7 +109,7 @@ def run_batch(
                 elapsed_seconds=time.time() - t_start,
             )
         except Exception as e:
-            print(f"  RUNNER ERROR: {type(e).__name__}: {e}")
+            logger.error("runner.batch_error", err_type=type(e).__name__, err=str(e))
             persist_run_end(
                 current_run_id,
                 status=RunStatus.ERROR,

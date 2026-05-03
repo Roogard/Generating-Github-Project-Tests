@@ -22,9 +22,14 @@ from src.types import RunBatch
 
 
 PRESETS = {
-    "fast":     {"timeout": 60,  "max_llm_calls": 10, "agentic_turn_cap": 4,  "per_test_timeout": 2},
-    "default":  {"timeout": 180, "max_llm_calls": 50, "agentic_turn_cap": 20, "per_test_timeout": 5},
-    "thorough": {"timeout": 300, "max_llm_calls": 70, "agentic_turn_cap": 28, "per_test_timeout": 10},
+    # `per_test_timeout` is per-test pytest budget. The runner adds ~3s and
+    # uses that as the docker subprocess wall-clock. Cold `docker run --rm`
+    # on Windows + WSL2 burns 2-5s before pytest even starts, so values
+    # below ~15s here can fire the harness's infrastructure-problem path
+    # (timeout → Improve) on tests that would otherwise pass.
+    "fast":     {"timeout": 60,  "max_llm_calls": 10, "agentic_turn_cap": 4,  "per_test_timeout": 15},
+    "default":  {"timeout": 180, "max_llm_calls": 50, "agentic_turn_cap": 20, "per_test_timeout": 30},
+    "thorough": {"timeout": 300, "max_llm_calls": 70, "agentic_turn_cap": 28, "per_test_timeout": 60},
 }
 
 

@@ -12,7 +12,11 @@ import shutil
 import subprocess
 import sys
 
+from src.logging import get_logger
 from src.runtime.base import Runtime, RuntimeResult
+
+
+logger = get_logger(__name__)
 
 
 class LocalRuntime(Runtime):
@@ -34,11 +38,13 @@ class LocalRuntime(Runtime):
                     "python.exe" if os.name == "nt" else "python",
                 )
             else:
-                print(f"  [runtime/local] uv venv failed: {r.stderr.strip()[:200]}; "
-                      f"falling back to {sys.executable}")
+                logger.warning("runtime_local.uv_venv_failed",
+                               stderr=r.stderr.strip()[:200],
+                               fallback=sys.executable)
         elif install_deps and not self._uv:
-            print("  [runtime/local] uv not on PATH; using server interpreter "
-                  f"({sys.executable}) — no per-run isolation")
+            logger.warning("runtime_local.no_uv",
+                           interpreter=sys.executable,
+                           note="no per-run isolation")
 
     @property
     def python_bin(self) -> str:

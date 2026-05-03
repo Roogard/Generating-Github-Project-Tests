@@ -37,6 +37,7 @@ from langchain_core.tools import StructuredTool
 
 from src.harness import BudgetExhausted, HarnessContext
 from src.llm import cached_system_message, get_llm
+from src.text_utils import truncate
 
 
 @dataclass
@@ -51,11 +52,6 @@ def _coerce_text(content) -> str:
     if isinstance(content, list):
         return "".join(p.get("text", "") if isinstance(p, dict) else str(p) for p in content)
     return content or ""
-
-
-def _truncate(text: str, cap: int = 600) -> str:
-    text = text or ""
-    return text if len(text) <= cap else text[:cap] + "...[truncated]"
 
 
 _HOOK_HEADER = "[harness] pytest after your test file changed:"
@@ -233,7 +229,7 @@ def run_agentic(
                 except Exception as e:
                     tool_output = f"ERROR running {name}({args!r}): {type(e).__name__}: {e}"
             tool_output_str = str(tool_output) if tool_output is not None else ""
-            messages.append(ToolMessage(content=_truncate(tool_output_str, cap=4000),
+            messages.append(ToolMessage(content=truncate(tool_output_str, 4000),
                                         tool_call_id=tool_call_id))
             result.tool_calls.append({
                 "turn": result.turns,
@@ -252,4 +248,4 @@ def run_agentic(
             except Exception as e:
                 diagnostic = (f"{_HOOK_HEADER}\n"
                               f"  ERROR running pytest: {type(e).__name__}: {e}")
-            messages.append(HumanMessage(_truncate(diagnostic, cap=4000)))
+            messages.append(HumanMessage(truncate(diagnostic, 4000)))

@@ -9,6 +9,8 @@ import os
 
 from langchain_core.messages import SystemMessage
 
+from src import config
+
 _PROVIDERS = {
     "deepseek":  {"base_url": "https://api.deepseek.com",       "api_key_env": "DEEPSEEK_API_KEY"},
     "openai":    {"base_url": "https://api.openai.com/v1",       "api_key_env": "OPENAI_API_KEY"},
@@ -24,11 +26,15 @@ _LLM_TIMEOUT = 120  # seconds — prevents LLM API calls from hanging indefinite
 
 
 def build_config(provider: str, model: str | None = None, api_key: str | None = None) -> dict:
-    p = _PROVIDERS.get(provider, _PROVIDERS["deepseek"])
+    if provider not in _PROVIDERS:
+        raise ValueError(
+            f"unknown provider {provider!r}; valid: {sorted(_PROVIDERS)}"
+        )
+    p = _PROVIDERS[provider]
     return {
         "provider": provider,
-        "model": model or _DEFAULT_MODELS.get(provider, "deepseek-chat"),
-        "base_url": os.environ.get("LLM_BASE_URL", p["base_url"]),
+        "model": model or _DEFAULT_MODELS[provider],
+        "base_url": config.LLM_BASE_URL or p["base_url"],
         "api_key": api_key or (os.environ.get(p["api_key_env"], "") if p["api_key_env"] else ""),
     }
 
