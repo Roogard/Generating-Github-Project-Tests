@@ -35,7 +35,9 @@ env/
 
 # Runtime data
 *.db
-!ggpt.db
+*.db-shm
+*.db-wal
+*.backup-*
 eval_output/
 output/
 
