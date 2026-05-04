@@ -1,0 +1,37 @@
+# Drop this file into your repo at .github/workflows/ggpt.yml.
+#
+# Setup checklist:
+#   1. This file lives at .github/workflows/ggpt.yml in YOUR repo.
+#   2. Add at least one provider key under Settings → Secrets → Actions:
+#        DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.
+#   3. Create a label called `ggpt` on the repo.
+#
+# Usage:
+#   - Apply the `ggpt` label to any issue → GGPT writes a regression
+#     test and opens a PR.
+#   - Or comment `/ggpt` on an issue → same thing.
+#
+# Future capabilities (e.g. `ggpt-fix` label, `/ggpt fix` comment) work
+# on this exact workflow file with no edits — adopters never need to
+# update this template.
+
+name: GGPT
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  ggpt:
+    if: |
+      (github.event_name == 'issues' &&
+       startsWith(github.event.label.name, 'ggpt')) ||
+      (github.event_name == 'issue_comment' &&
+       startsWith(github.event.comment.body, '/ggpt'))
+    uses: Roogard/Generating-Github-Project-Tests/.github/workflows/ggpt.yml@main
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    secrets: inherit
