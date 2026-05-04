@@ -1,48 +1,91 @@
 # GGPT — Generating Github Project Tests
 
-An issue-driven AI agent that reads GitHub bug reports and writes regression tests that reproduce the bug. Evaluated on **SWT-Bench Lite** (300 real GitHub issues) using the F→P / F→F / P→F / P→P transition oracle.
+An issue-driven AI agent that reads GitHub bug reports and writes regression tests that reproduce them — installed as a GitHub Action, triggered by a label.
+
+## Set it up (4 steps, ~2 minutes)
+
+### 1. Add the workflow file
+
+Drop this into your repo at **`.github/workflows/ggpt.yml`**:
+
+```yaml
+name: GGPT
+on:
+  issues:
+    types: [labeled]
+  issue_comment:
+    types: [created]
+
+jobs:
+  ggpt:
+    if: |
+      (github.event_name == 'issues' &&
+       startsWith(github.event.label.name, 'ggpt')) ||
+      (github.event_name == 'issue_comment' &&
+       startsWith(github.event.comment.body, '/ggpt'))
+    uses: Roogard/Generating-Github-Project-Tests/.github/workflows/ggpt.yml@main
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    secrets: inherit
+```
+
+### 2. Add an LLM API key as a repo secret
+
+**Settings → Secrets and variables → Actions → New repository secret**
+
+Name it one of: `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`. Paste your key as the value. Whichever you set is the one GGPT uses (preference order: deepseek → anthropic → openai).
+
+### 3. Allow Actions to open PRs
+
+**Settings → Actions → General → Workflow permissions**
+
+Check ✅ **"Allow GitHub Actions to create and approve pull requests"** and save. (Off by default on new repos; without it GGPT can write the test but can't open the PR.)
+
+### 4. Create the trigger label
+
+**Issues → Labels → New label** → name: `ggpt` → **Create label**.
+
+(Or from a terminal: `gh label create ggpt --repo <owner>/<repo>`.)
+
+## How to use it
+
+- **Label any issue with `ggpt`** → GGPT reads the issue body, generates a regression test, and opens a PR closing the issue.
+- **Or comment `/ggpt` on an issue** → same thing.
+- **On failure** (empty issue body, agent crash, no test produced) → GGPT comments on the issue with a link to the action logs instead of opening a PR.
+
+## What you get
+
+The PR adds one file: `tests/test_ggpt_issue_<n>.py` — a pytest regression test that reproduces the bug described in the issue. Review it, tweak it if you want, and merge it like any other PR.
+
+### Known limitation: the auto-PR doesn't fire your CI
+
+GitHub's anti-loop protection prevents the default `GITHUB_TOKEN` from triggering other workflows. The PR opens but your CI doesn't run on it automatically. Workarounds:
+
+- Push an empty commit (`git commit --allow-empty -m "trigger ci"`) to wake CI, or
+- Close and reopen the PR, or
+- Swap `${{ github.token }}` for a personal access token (`GH_PAT`) inside [the published workflow](.github/workflows/ggpt.yml) if you fork.
+
+## Future capabilities — no re-setup
+
+The trigger filter catches **any** label starting with `ggpt` and **any** comment starting with `/ggpt`. As new modes ship in this repo (`ggpt-fix` → write a fix, `ggpt-refactor` → propose a refactor, etc.), they work on your existing workflow file with **zero edits**. New LLM providers may eventually need a new secret name, but nothing else.
+
+---
+
+## How it works
 
 The agent is given a repo + base commit and the issue text. It localizes the relevant code itself via Claude Code-shaped tools (`Glob` / `Grep` / `Read` / `Edit` / `Write`), writes a pytest file, and the harness auto-runs pytest after any modification to the test file. When a gold patch is available (SWT-Bench), the runner grades post-hoc: run on buggy → apply patch → run on fixed → label each test's transition.
 
-There are two ways to use it:
-
-1. **GitHub Action** (recommended for everyday use) — drop a workflow file into your repo, label an issue with `ggpt`, get a PR. No backend, no hosting, runs in your repo's GitHub Actions runner. See [Use as a GitHub Action](#use-as-a-github-action) below.
-2. **Local webapp** (for SWT-Bench benchmarking and ad-hoc runs) — a React dashboard backed by FastAPI for kicking off batch evaluations. See [Web UI](#web-ui) below.
+Evaluated on **SWT-Bench Lite** (300 real GitHub issues) using the F→P / F→F / P→F / P→P transition oracle.
 
 ---
 
-## Use as a GitHub Action
+## Local development & SWT-Bench benchmarking
 
-Setup is one workflow file plus one secret. Once installed, **future capabilities** (`fix`, `refactor`, …) work on the same setup — adopters never need to come back and edit anything.
+The bits below are for working on GGPT itself or running benchmark evaluations — adopters using the action don't need any of this.
 
-### Adopter setup
-
-1. Drop [examples/workflows/ggpt-issue.yml](examples/workflows/ggpt-issue.yml) into your repo at `.github/workflows/ggpt.yml`.
-2. Add at least one provider key under **Settings → Secrets and variables → Actions**:
-   - `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`
-3. Create a label called `ggpt` on the repo.
-
-### Usage
-
-- Apply the `ggpt` label to any issue → GGPT writes a regression test and opens a PR closing the issue.
-- Or comment `/ggpt` on the issue → same flow.
-- On failure (empty issue body, agent crash, no test produced), GGPT comments on the issue with a link to the action logs instead of opening a PR.
-
-### Known limitation: PRs don't trigger CI
-
-GitHub's anti-loop protection prevents the default `GITHUB_TOKEN` from firing other workflows. The auto-opened PR shows up but CI doesn't run on it. Workarounds:
-
-- Push an empty commit to the PR branch (`git commit --allow-empty -m "trigger ci"`) to wake CI up, or
-- Close and re-open the PR, or
-- Replace `${{ github.token }}` references in the workflow with a personal access token stored as `GH_PAT` (gives the action a non-default identity that *can* trigger CI).
-
-### Future capabilities, no re-setup
-
-The trigger filter in the adopter template catches any label starting with `ggpt` and any comment starting with `/ggpt`. As new modes ship in this repo (e.g. `ggpt-fix` → `fix`), adopters get them automatically — the workflow file never needs to change. The only thing that does need to grow is the optional set of LLM provider secrets, if a genuinely new provider is added later.
-
----
-
-## Quick Start
+### Quick Start
 
 ```bash
 # Install Python deps (with the webapp + benchmark extras)
