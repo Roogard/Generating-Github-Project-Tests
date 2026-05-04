@@ -9,4 +9,3 @@ pytest>=8.0
 pytest-json-report>=1.5
 pytest-timeout>=2.3
 datasets>=2.19
-PyJWT[crypto]>=2.8
