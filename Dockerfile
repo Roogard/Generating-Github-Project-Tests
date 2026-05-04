@@ -10,7 +10,7 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml constraints.txt ./
+COPY pyproject.toml ./
 RUN pip install --no-cache-dir -e ".[api,swtbench]"
 
 COPY --from=frontend-builder /app/webapp/dist ./webapp/dist

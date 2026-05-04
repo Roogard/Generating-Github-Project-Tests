@@ -1,9 +1,0 @@
-services:
-  - type: web
-    name: ggpt
-    runtime: docker
-    plan: free
-    healthCheckPath: /api/runs/
-    envVars:
-      - key: DATABASE_URL
-        value: sqlite:///./ggpt.db
