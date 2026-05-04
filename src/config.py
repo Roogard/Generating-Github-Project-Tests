@@ -24,6 +24,10 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 RUNTIME: str = (os.getenv("GGPT_RUNTIME") or "auto").strip().lower()
 DOCKER_IMAGE: str = os.getenv("GGPT_DOCKER_IMAGE", "ggpt-runtime")

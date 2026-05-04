@@ -1,0 +1,72 @@
+name: GGPT (reusable)
+
+# Called by adopter workflows via `uses:`. The caller runs the
+# `actions/checkout` for itself; we run it again here to be explicit
+# about what GITHUB_WORKSPACE points at, and so the action works as a
+# standalone reference too.
+on:
+  workflow_call:
+    inputs:
+      ggpt-ref:
+        description: Git ref of the GGPT repo to install (tag, branch, or SHA)
+        type: string
+        default: main
+    secrets:
+      DEEPSEEK_API_KEY:
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out caller repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install GGPT
+        shell: bash
+        run: |
+          python -m pip install --upgrade pip
+          pip install "git+https://github.com/Roogard/Generating-Github-Project-Tests@${{ inputs.ggpt-ref }}"
+
+      - name: Run agent
+        id: agent
+        shell: bash
+        env:
+          GGPT_RUNTIME: local
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python -m src.action_entrypoint
+
+      - name: Open PR with generated change
+        if: steps.agent.outputs.changed_path != ''
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: ${{ steps.agent.outputs.commit_message }}
+          branch: ${{ steps.agent.outputs.branch }}
+          title: ${{ steps.agent.outputs.pr_title }}
+          body: ${{ steps.agent.outputs.pr_body }}
+          add-paths: ${{ steps.agent.outputs.changed_path }}
+
+      # `if: always() && ...` so this still runs when the agent step
+      # exits non-zero — the agent normally returns 0 + empty
+      # changed_path on failure, but a hard crash should still leave
+      # a comment for the issue author.
+      - name: Comment on issue if no change produced
+        if: always() && steps.agent.outputs.changed_path == '' && steps.agent.outputs.target_number != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh issue comment "${{ steps.agent.outputs.target_number }}" \
+            --repo "${{ github.repository }}" \
+            --body "GGPT run produced no change. See [logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})."
