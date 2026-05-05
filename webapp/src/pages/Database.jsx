@@ -35,43 +35,56 @@ export default function Database() {
 
   return (
     <div className="page">
-      <div className="page-header">
+
+      {/* ── Header ── */}
+      <div className="page-header" style={{ borderBottom: '0.5px solid #8B6914', paddingBottom: 20, marginBottom: 24 }}>
         <div>
-          <h1 className="page-title">Database</h1>
+          <h1 className="page-title" style={{ color: '#E8C97A' }}>Database</h1>
           <div className="page-sub">
-            SWT-Bench Lite · {summary.model} · {summary.preset} preset · {summary.date}
+            SWT-Bench Lite &nbsp;·&nbsp; {summary.model} &nbsp;·&nbsp; {summary.preset} preset &nbsp;·&nbsp; {summary.date}
           </div>
         </div>
+        <span style={{ fontSize: 10, letterSpacing: '0.2em', color: '#8B6914', textTransform: 'uppercase', alignSelf: 'flex-end' }}>
+          Benchmark Results
+        </span>
       </div>
 
+      {/* ── Stat cards ── */}
       <div className="stat-row">
-        <div className="stat-card">
+        {/* Resolved — gold accent as primary metric */}
+        <div className="stat-card" style={{ borderColor: '#8B6914' }}>
           <div className="stat-label">Resolved</div>
-          <div className="stat-value" style={{ color: 'var(--green-fg)' }}>
-            {summary.resolved} <span style={{ fontSize: 16, color: 'var(--text-3)', fontWeight: 500 }}>/ {summary.total}</span>
+          <div className="stat-value" style={{ color: '#C9A84C' }}>
+            {summary.resolved}
+            <span style={{ fontSize: 16, color: 'var(--text-3)', fontWeight: 500 }}> / {summary.total}</span>
           </div>
           <div className="stat-sub">{summary.resolved_rate}% resolution rate</div>
         </div>
+
         <div className="stat-card">
           <div className="stat-label">Detected</div>
           <div className="stat-value">{summary.detected}</div>
           <div className="stat-sub">{summary.detection_rate}% bug-detection rate</div>
         </div>
+
         <div className="stat-card">
-          <div className="stat-label">F→P (good)</div>
+          <div className="stat-label">F→P <span style={{ color: '#8B6914' }}>(good)</span></div>
           <div className="stat-value" style={{ color: 'var(--green-fg)' }}>{summary.f2p}</div>
           <div className="stat-sub">tests that catch the bug</div>
         </div>
+
         <div className="stat-card">
           <div className="stat-label">F→F</div>
           <div className="stat-value" style={{ color: summary.f2f > 0 ? 'var(--red-fg)' : 'var(--text)' }}>{summary.f2f}</div>
           <div className="stat-sub">spurious failures</div>
         </div>
+
         <div className="stat-card">
           <div className="stat-label">P→F</div>
           <div className="stat-value" style={{ color: summary.p2f > 0 ? 'var(--red-fg)' : 'var(--text)' }}>{summary.p2f}</div>
           <div className="stat-sub">regressions</div>
         </div>
+
         <div className="stat-card">
           <div className="stat-label">P→P</div>
           <div className="stat-value">{summary.p2p}</div>
@@ -79,15 +92,21 @@ export default function Database() {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
-        <div className="card-header">
-          <h3>Issues · <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>{instances.length} runs</span></h3>
-          <span style={{ fontSize: 12, color: 'var(--text-3)' }}>click any row for full detail</span>
+      {/* ── Table ── */}
+      <div className="card" style={{ padding: 0, borderColor: '#2a2310' }}>
+        <div className="card-header" style={{ borderBottomColor: '#2a2310' }}>
+          <h3>
+            Issues &nbsp;
+            <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>{instances.length} runs</span>
+          </h3>
+          <span style={{ fontSize: 11, letterSpacing: '0.12em', color: '#8B6914', textTransform: 'uppercase' }}>
+            click any row for full detail
+          </span>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Instance</th>
+              <th style={{ color: '#8B6914' }}>Instance</th>
               <th>Status</th>
               <th style={{ textAlign: 'right' }}>F→P</th>
               <th style={{ textAlign: 'right' }}>F→F</th>
@@ -100,7 +119,7 @@ export default function Database() {
             {instances.map(inst => (
               <tr key={inst.id} className="clickable">
                 <td style={{ fontFamily: 'var(--mono)', fontSize: 12 }}>
-                  <Link to={`/runs/${inst.id}`} style={{ color: 'var(--text)' }}>
+                  <Link to={`/runs/${inst.id}`} style={{ color: '#C9A84C' }}>
                     {inst.benchmark_id}
                   </Link>
                 </td>
@@ -117,6 +136,7 @@ export default function Database() {
           </tbody>
         </table>
       </div>
+
     </div>
   )
 }
