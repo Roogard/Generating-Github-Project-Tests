@@ -2,10 +2,17 @@
 
 Invoked by the published reusable workflow at
 [.github/workflows/ggpt.yml](.github/workflows/ggpt.yml). Reads the
-issue/comment that triggered the workflow, dispatches to a mode handler
-(`test` today; `fix`/`refactor` later), runs the agent against the
-already-checked-out repo, and emits `$GITHUB_OUTPUT` lines that
-downstream workflow steps consume to commit + open the PR.
+issue/comment that triggered the workflow, dispatches to a mode handler,
+runs the agent against the already-checked-out repo, and emits
+`$GITHUB_OUTPUT` lines that downstream workflow steps consume to commit
++ open the PR.
+
+Modes (selected by the label suffix, or `/ggpt <mode>` comment):
+  test   — generate a regression test for the issue.            (label: ggpt or ggpt-test)
+  fix    — generate the test, then propose a source-code fix    (label: ggpt-fix)
+           and ship both in the PR. Fix is verified by re-running
+           the test; if the test still fails after the proposed
+           edits, the fix is reverted and the PR ships test-only.
 
 Workflow contract
 =================
@@ -45,16 +52,19 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import subprocess
 import sys
 import traceback
 from dataclasses import dataclass
 from typing import Callable
 
 from src.agent import run_agent
+from src.harness import BudgetExhausted, HarnessContext
 from src.inputs.base import PRESETS
 from src.inputs.repo import _setup_runtime
 from src.llm import build_config
 from src.logging import configure_logging, get_logger
+from src.test_runner import run_tests
 from src.types import AgentTask
 
 
@@ -161,10 +171,115 @@ def _pick_provider() -> tuple[str, str] | None:
 
 # ── mode handlers ──────────────────────────────────────────────────────────
 
-def _run_test_mode(trigger: Trigger, workspace: str) -> str | None:
-    """Generate a regression test from the issue. Returns the
-    workspace-relative path of the written test on success, `None` on
-    any failure.
+@dataclass
+class ModeResult:
+    """What a mode handler returns to `main`. The action emits one PR with
+    the test plus any source files the (optional) fix step modified.
+    """
+    test_rel_path: str
+    fix_rel_paths: list[str]
+    fix_applied: bool
+
+
+# ── fix-proposal helpers (Action path only) ────────────────────────────────
+
+def _propose_and_apply_fix(ctx: HarnessContext, workspace: str) -> tuple[list[str], bool]:
+    """Run ProposeFixSkill, verify by re-running pytest, return changed
+    source paths + whether the fix was kept.
+
+    Only attempted when:
+      - The harness produced a test file that pytest could run.
+      - At least one test failed on the buggy code (i.e. the test reproduces
+        the bug — F→P signal is real and we have something to fix).
+      - There's enough llm_budget headroom for an agentic loop.
+
+    On any failure (skill error, pytest still failing after the edits, or
+    no edits at all), reverts source-file changes via `git checkout -- .`
+    so the PR ships test-only.
+    """
+    from src.skills.propose_fix import ProposeFixSkill
+
+    fb = ctx.last_feedback
+    if fb is None or not fb.failures:
+        logger.info("entrypoint.fix_skipped", reason="no_test_failure_to_fix")
+        return [], False
+
+    if ctx.llm_budget - ctx.llm_calls_used < 3:
+        logger.info("entrypoint.fix_skipped", reason="budget_exhausted",
+                    used=ctx.llm_calls_used, budget=ctx.llm_budget)
+        return [], False
+
+    try:
+        ProposeFixSkill().run(ctx)
+    except BudgetExhausted:
+        logger.info("entrypoint.fix_skipped", reason="budget_exhausted_mid_skill")
+        _revert_source_edits(workspace)
+        return [], False
+    except Exception as e:
+        logger.error("entrypoint.fix_skill_error",
+                     err_type=type(e).__name__, err=str(e),
+                     traceback=traceback.format_exc())
+        _revert_source_edits(workspace)
+        return [], False
+
+    # Verify: re-run the test against the modified source.
+    verify = run_tests(
+        ctx.test_file_path, ctx.repo_dir, ctx.runtime,
+        timeout=ctx.timeout, per_test_timeout=ctx.per_test_timeout,
+    )
+    passed = len(verify.get("passed") or [])
+    failed = len(verify.get("failed") or [])
+    real_errors = len([e for e in (verify.get("errors") or []) if not e.startswith("__")])
+    fix_works = passed > 0 and failed == 0 and real_errors == 0
+
+    if not fix_works:
+        logger.info("entrypoint.fix_verification_failed",
+                    passed=passed, failed=failed, errors=real_errors)
+        _revert_source_edits(workspace)
+        return [], False
+
+    changed = _git_diff_paths(workspace)
+    if not changed:
+        # The skill said "done" without actually editing anything. Rare but
+        # possible. Treat as no fix applied.
+        logger.info("entrypoint.fix_skipped", reason="skill_made_no_edits")
+        return [], False
+
+    logger.info("entrypoint.fix_applied", changed_count=len(changed))
+    return changed, True
+
+
+def _git_diff_paths(workspace: str) -> list[str]:
+    """Workspace-relative paths of files modified vs HEAD. Untracked files
+    (e.g. the to-be-copied test file) are intentionally excluded.
+    """
+    r = subprocess.run(
+        ["git", "-C", workspace, "diff", "--name-only", "HEAD"],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+    return [line.strip() for line in r.stdout.splitlines() if line.strip()]
+
+
+def _revert_source_edits(workspace: str) -> None:
+    """`git checkout -- .` — undo unstaged source edits so a failed fix
+    attempt doesn't leak into the PR.
+    """
+    subprocess.run(
+        ["git", "-C", workspace, "checkout", "--", "."],
+        capture_output=True, text=True, timeout=10, check=False,
+    )
+
+
+# ── mode handlers ──────────────────────────────────────────────────────────
+
+def _run_mode(trigger: Trigger, workspace: str, *, propose_fix: bool) -> ModeResult | None:
+    """Run the agent and return its output paths.
+
+    `propose_fix=False` — generate just a regression test (`ggpt-test`).
+    `propose_fix=True`  — generate the test AND a proposed source fix
+                          (`ggpt-fix`); the fix is gated on verification.
+
+    Returns `ModeResult` on success, `None` on any setup or run failure.
     """
     if not trigger.issue_body.strip():
         logger.error("entrypoint.empty_issue_body", issue=trigger.target_number)
@@ -212,8 +327,22 @@ def _run_test_mode(trigger: Trigger, workspace: str) -> str | None:
         per_test_timeout=preset.get("per_test_timeout"),
     )
 
+    # In fix mode, ProposeFixSkill runs inside `run_agent` via the
+    # post_finalize hook — that's where the live HarnessContext exists.
+    # Closure state carries the outcome back here.
+    fix_state: dict = {"paths": [], "applied": False}
+
+    if propose_fix:
+        def _post_finalize(ctx: HarnessContext) -> None:
+            paths, applied = _propose_and_apply_fix(ctx, workspace)
+            fix_state["paths"] = paths
+            fix_state["applied"] = applied
+        post_finalize = _post_finalize
+    else:
+        post_finalize = None
+
     try:
-        result = run_agent(task)
+        result = run_agent(task, post_finalize=post_finalize)
     finally:
         runtime.shutdown()
 
@@ -227,14 +356,28 @@ def _run_test_mode(trigger: Trigger, workspace: str) -> str | None:
     dst_abs = os.path.join(workspace, rel_path)
     os.makedirs(os.path.dirname(dst_abs), exist_ok=True)
     shutil.copyfile(src_test, dst_abs)
-    return rel_path
+    return ModeResult(
+        test_rel_path=rel_path,
+        fix_rel_paths=fix_state["paths"],
+        fix_applied=fix_state["applied"],
+    )
 
 
-_MODE_HANDLERS: dict[str, Callable[[Trigger, str], str | None]] = {
+# Thin wrappers so each mode is its own callable in the dispatcher.
+def _run_test_mode(trigger: Trigger, workspace: str) -> ModeResult | None:
+    return _run_mode(trigger, workspace, propose_fix=False)
+
+
+def _run_fix_mode(trigger: Trigger, workspace: str) -> ModeResult | None:
+    return _run_mode(trigger, workspace, propose_fix=True)
+
+
+_MODE_HANDLERS: dict[str, Callable[[Trigger, str], ModeResult | None]] = {
     "test": _run_test_mode,
-    # 'fix', 'refactor', etc. — register handlers here. Adopter workflow
-    # already routes the labels and slash-commands; only this dict needs
-    # to grow.
+    "fix":  _run_fix_mode,
+    # Add more modes here as they're built. The dispatcher already routes
+    # labels (`ggpt-<mode>`) and `/ggpt <mode>` comments to the matching
+    # key — adopter workflows don't need updating.
 }
 
 
@@ -264,7 +407,7 @@ def main() -> int:
         return 0
 
     try:
-        rel_path = handler(trigger, workspace)
+        outcome = handler(trigger, workspace)
     except Exception as e:
         logger.error("entrypoint.handler_crashed",
                      mode=trigger.mode,
@@ -272,15 +415,42 @@ def main() -> int:
                      traceback=traceback.format_exc())
         return 0
 
-    if not rel_path:
+    if outcome is None:
         return 0
 
-    _emit("changed_path",   rel_path)
-    _emit("branch",         f"ggpt/issue-{trigger.target_number}")
-    _emit("commit_message", f"Add regression test for #{trigger.target_number}")
-    _emit("pr_title",       f"GGPT: regression test for #{trigger.target_number}")
-    _emit("pr_body",
-          f"Closes #{trigger.target_number}\n\nAuto-generated by GGPT.")
+    # peter-evans/create-pull-request@v6 accepts newline-separated paths in
+    # `add-paths`. The test always ships; the fix files only ship if the
+    # post-finalize step kept them.
+    paths = [outcome.test_rel_path, *outcome.fix_rel_paths]
+    _emit("changed_path", "\n".join(paths))
+    _emit("branch",       f"ggpt/issue-{trigger.target_number}")
+
+    n = trigger.target_number
+    if outcome.fix_applied:
+        _emit("commit_message", f"Add regression test + proposed fix for #{n}")
+        _emit("pr_title",       f"GGPT: regression test + proposed fix for #{n}")
+        _emit("pr_body",
+              f"Closes #{n}\n\n"
+              f"Auto-generated by GGPT. The test reproduces the issue and the "
+              f"proposed source change makes it pass.\n\n"
+              f"Files changed: {len(outcome.fix_rel_paths)} source file(s) + "
+              f"1 test.")
+    elif trigger.mode == "fix":
+        # User asked for a fix (ggpt-fix label or /ggpt fix), but the
+        # propose-and-verify step couldn't make the test pass.
+        _emit("commit_message", f"Add regression test for #{n}")
+        _emit("pr_title",       f"GGPT: regression test for #{n} (fix attempt failed)")
+        _emit("pr_body",
+              f"Closes #{n}\n\n"
+              f"Auto-generated by GGPT. A code fix was attempted but did not "
+              f"make the test pass — shipping test only.")
+    else:
+        # Test mode (ggpt or ggpt-test) — fix was never attempted.
+        _emit("commit_message", f"Add regression test for #{n}")
+        _emit("pr_title",       f"GGPT: regression test for #{n}")
+        _emit("pr_body",
+              f"Closes #{n}\n\n"
+              f"Auto-generated by GGPT.")
     return 0
 
 

@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 import traceback
 from pathlib import Path
+from typing import Callable
 
 from src.harness.feedback import Feedback, build_feedback
 from src.harness.state import (
@@ -45,12 +46,20 @@ def run_harness(
     max_llm_calls: int = 8,
     agentic_turn_cap: int = 6,
     per_test_timeout: int | None = None,
+    post_finalize: Callable[[HarnessContext], None] | None = None,
 ) -> dict:
     """Run the issue-driven harness for one (repo, issue) task.
 
     `run_id` (optional): when provided, the harness emits live pipeline-stage
     updates against the matching Run row so the webapp can display
     'Generating' / 'Critiquing' / etc. while polling.
+
+    `post_finalize` (optional): called after `finalize(ctx)` on the normal
+    completion path (not on early-exit failure paths). Receives the live
+    HarnessContext so callers — currently only the GitHub Action entrypoint —
+    can run extra skills (e.g. ProposeFixSkill) against the same warm runtime
+    and budget. Side effects only; the return value is discarded. Exceptions
+    are caught and logged so they can't break the harness contract.
 
     Returns a persist-ready dict (see `finalize`).
     """
@@ -221,7 +230,15 @@ def run_harness(
             ctx.last_feedback = prior_feedback
 
     _stage(None)
-    return finalize(ctx)
+    out = finalize(ctx)
+    if post_finalize is not None:
+        try:
+            post_finalize(ctx)
+        except Exception as e:
+            logger.error("harness.post_finalize_error",
+                         err_type=type(e).__name__, err=str(e),
+                         traceback=traceback.format_exc())
+    return out
 
 
 def _execute_and_feedback(ctx: HarnessContext) -> Feedback:

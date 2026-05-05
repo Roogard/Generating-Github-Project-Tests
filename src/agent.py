@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import traceback
+from typing import Callable, TYPE_CHECKING
 
 import structlog
 
@@ -24,16 +25,29 @@ from src.logging import configure_logging, get_logger
 from src.runtime.swtbench import SwtBenchRuntime
 from src.types import AgentResult, AgentTask
 
+if TYPE_CHECKING:
+    from src.harness import HarnessContext
+
 
 logger = get_logger(__name__)
 
 
-def run_agent(task: AgentTask, *, run_id: int | None = None) -> AgentResult:
+def run_agent(
+    task: AgentTask,
+    *,
+    run_id: int | None = None,
+    post_finalize: "Callable[[HarnessContext], None] | None" = None,
+) -> AgentResult:
     """Run the harness loop for one task. Returns an AgentResult.
 
     `run_id` is passed through so the harness can emit live stage updates
     against the matching Run row. Defaults to None for callers (e.g. direct
     tests) that don't have a DB row.
+
+    `post_finalize` (optional) — forwarded to `run_harness`. Called once with
+    the live HarnessContext after the pipeline finishes successfully. Used by
+    the GitHub Action entrypoint to run a fix-proposal skill against the same
+    runtime / budget. Other callers leave it None.
 
     Caller (the runner) owns the runtime lifecycle — `runtime.shutdown()`
     is called once after all tasks for a runtime have been processed.
@@ -66,6 +80,7 @@ def run_agent(task: AgentTask, *, run_id: int | None = None) -> AgentResult:
             max_llm_calls=task.max_llm_calls,
             agentic_turn_cap=task.agentic_turn_cap,
             per_test_timeout=task.per_test_timeout,
+            post_finalize=post_finalize,
         )
     except Exception as e:
         logger.error("agent.harness_error", err_type=type(e).__name__, err=str(e),

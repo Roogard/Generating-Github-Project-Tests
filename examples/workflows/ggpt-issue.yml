@@ -1,21 +1,13 @@
-# Drop this file into your repo at .github/workflows/ggpt.yml.
-#
-# Setup checklist:
-#   1. This file lives at .github/workflows/ggpt.yml in YOUR repo.
-#   2. Add at least one provider key under Settings → Secrets → Actions:
-#        DEEPSEEK_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.
-#   3. Create a label called `ggpt` on the repo.
-#
-# Usage:
-#   - Apply the `ggpt` label to any issue → GGPT writes a regression
-#     test and opens a PR.
-#   - Or comment `/ggpt` on an issue → same thing.
-#
-# Future capabilities (e.g. `ggpt-fix` label, `/ggpt fix` comment) work
-# on this exact workflow file with no edits — adopters never need to
-# update this template.
-
 name: GGPT
+# Triggers:
+#   Label  ggpt       — generate a regression test (alias of ggpt-test)
+#   Label  ggpt-test  — generate a regression test
+#   Label  ggpt-fix   — generate the test AND propose a source-code fix;
+#                       both ship in one PR (fix is verified — if the test
+#                       still fails after the proposed edits, the fix is
+#                       reverted and the PR ships test-only).
+#   Comment /ggpt          — same as ggpt-test
+#   Comment /ggpt fix      — same as ggpt-fix
 on:
   issues:
     types: [labeled]
