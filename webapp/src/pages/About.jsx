@@ -145,7 +145,8 @@ export default function About() {
           </motion.div>
         ))}
 
-      <motion.div
+      </div>
+       <motion.div
           initial={{ opacity: 0, y: 16 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
@@ -156,7 +157,6 @@ export default function About() {
             &nbsp; &nbsp; View on GitHub ↗
           </a>
         </motion.div>
-      </div>
     </div>
    );
 }
@@ -177,9 +177,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     justifyContent: 'flex-end',
-    pointerEvents: 'auto',
-    zIndex: 0,
     pointerEvents: 'none',
+    zIndex: 0,
   },
   heroInner: {
     maxWidth: 1100,
