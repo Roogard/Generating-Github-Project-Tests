@@ -4,7 +4,8 @@
    segmented, nav-logo-dot) are additive.
    ─────────────────────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Michroma&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Martian+Mono:wght@300;400&display=swap');
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -25,10 +26,10 @@
   --red:       #ef4444;
   --red-dim:   #450a0a;
   --red-fg:    #fca5a5;
-  --amber:     #f59e0b;
-  --amber-fg:  #fbbf24;
+ --gold:       #d4af37;
+ --gold-dim:    #f7ef8a;
   --mono:      'JetBrains Mono', monospace;
-  --sans:      'Inter', system-ui, sans-serif;
+  --sans:      'Michroma', system-ui, sans-serif;
 }
 
 html { font-size: 14px; }
@@ -37,7 +38,7 @@ body {
   background: var(--bg); color: var(--text);
   min-height: 100vh; -webkit-font-smoothing: antialiased;
 }
-a { color: var(--blue); text-decoration: none; }
+a { color: var(--gold); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -56,14 +57,14 @@ a:hover { text-decoration: underline; }
   display: flex; align-items: center; gap: 8px;
   color: var(--text);
 }
-.nav-logo-dot { width: 6px; height: 6px; background: var(--blue); border-radius: 50%; }
+.nav-logo-dot { width: 6px; height: 6px; background: var(--gold); border-radius: 50%; }
 .nav-link {
   font-size: 13px; color: var(--text-2); padding: 0 14px; height: 52px;
   display: flex; align-items: center; border-bottom: 2px solid transparent;
   transition: color 0.12s, border-color 0.12s; cursor: pointer; white-space: nowrap;
 }
 .nav-link:hover { color: var(--text); text-decoration: none; }
-.nav-link.active { color: var(--text); border-bottom-color: var(--blue); }
+.nav-link.active { color: var(--text); border-bottom-color: var(--gold); }
 
 /* ── Page ── */
 .page { max-width: 1180px; margin: 0 auto; padding: 32px 28px; }
@@ -83,7 +84,7 @@ button {
 }
 button:hover { opacity: 0.88; }
 button:disabled { opacity: 0.35; cursor: not-allowed; }
-.btn-primary { background: var(--blue); color: #fff; }
+.btn-primary { background: var(--gold); color: #fff; }
 .btn-danger  { background: transparent; border: 1px solid var(--red-dim); color: var(--red); }
 .btn-danger:hover { background: var(--red-dim); opacity: 1; }
 .btn-ghost   { background: transparent; border: 1px solid var(--border); color: var(--text-2); }
@@ -97,7 +98,7 @@ input, select, textarea {
   padding: 8px 11px; width: 100%; outline: none; transition: border-color 0.12s;
 }
 input:focus, select:focus, textarea:focus {
-  border-color: var(--blue); box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
+  border-color: var(--gold); box-shadow: 0 0 0 3px rgba(59,130,246,0.12);
 }
 textarea { resize: vertical; font-family: var(--mono); font-size: 12px; }
 label { display: block; font-size: 12px; color: var(--text-2); margin-bottom: 5px; font-weight: 500; }
@@ -166,7 +167,7 @@ tbody tr.clickable { cursor: pointer; }
   background: var(--border); border-radius: 999px; height: 5px; overflow: hidden;
 }
 .progress-bar-fill, .progress-fill {
-  height: 100%; background: var(--blue); border-radius: 999px; transition: width 0.4s ease;
+  height: 100%; background: var(--gold); border-radius: 999px; transition: width 0.4s ease;
 }
 
 /* ── Chips ── */
@@ -186,7 +187,7 @@ tbody tr.clickable { cursor: pointer; }
   transition: color 0.12s; font-weight: 500; margin-bottom: -1px;
 }
 .tab:hover { color: var(--text-2); }
-.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab.active { color: var(--gold); border-bottom-color: var(--gold-dim); }
 
 /* ── Alerts ── */
 .alert { padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 13px; }
@@ -287,7 +288,7 @@ tbody tr.clickable { cursor: pointer; }
   background: transparent; color: var(--text-2); border: none;
   padding: 5px 14px; font-size: 12px; border-radius: 5px;
 }
-.segmented button.active { background: var(--blue); color: #fff; }
+.segmented button.active { background: var(--gold); color: #fff; }
 
 @media (max-width: 900px) {
   .grid-2 { grid-template-columns: 1fr; }
