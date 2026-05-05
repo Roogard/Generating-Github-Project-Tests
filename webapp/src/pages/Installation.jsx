@@ -1,3 +1,15 @@
+import { motion } from 'framer-motion';
+ 
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  show: (i = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.6, delay: i * 0.12, ease: [0.22, 1, 0.36, 1] },
+  }),
+};
+
+/// Main repo entry
 const WORKFLOW_YAML = `name: GGPT
 # Triggers:
 #   Label  ggpt       — generate a regression test (alias of ggpt-test)
@@ -29,6 +41,7 @@ jobs:
     secrets: inherit
 `
 
+/// Wrapper for YAML
 function CodeBlock({ children }) {
   return (
     <pre className="code-block" style={{ whiteSpace: 'pre' }}>
@@ -44,7 +57,7 @@ export default function Installation() {
         <div>
           <h1 className="page-title">Installation</h1>
           <div className="page-sub">
-            Wire GGPT into any GitHub repo. The agent reads issues and opens PRs
+            Wire GGPT into any GitHub repo. The agent reads issues and opens pull requests
             with regression tests (and optionally a fix).
           </div>
         </div>

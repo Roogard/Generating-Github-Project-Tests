@@ -66,6 +66,19 @@ a:hover { text-decoration: underline; }
 .nav-link:hover { color: var(--text); text-decoration: none; }
 .nav-link.active { color: var(--text); border-bottom-color: var(--gold); }
 
+/* ── Home ── */
+.home-title {
+  font-family: 'Martian Mono', monospace;
+  font-style: italic;
+  font-weight: 300;
+  font-size: clamp(2rem, 8vw, 6rem);
+  color: #C9A84C;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  border-left: 2px solid #8B6914;
+  padding-left: 1rem;
+ }
+
 /* ── Page ── */
 .page { max-width: 1180px; margin: 0 auto; padding: 32px 28px; }
 .page-header {
