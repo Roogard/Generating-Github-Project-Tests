@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import RunsList from './pages/RunsList.jsx'
+import About from './pages/About.jsx'
+import Installation from './pages/Installation.jsx'
+import Database from './pages/Database.jsx'
 import RunDetail from './pages/RunDetail.jsx'
-import Analytics from './pages/Analytics.jsx'
-import Benchmark from './pages/Benchmark.jsx'
 
 function Nav() {
   const link = ({ isActive }) => 'nav-link' + (isActive ? ' active' : '')
@@ -12,9 +12,9 @@ function Nav() {
         <span className="nav-logo-dot" />
         GGPT
       </span>
-      <NavLink className={link} to="/" end>Runs</NavLink>
-      <NavLink className={link} to="/benchmark">Benchmark</NavLink>
-      <NavLink className={link} to="/analytics">Analytics</NavLink>
+      <NavLink className={link} to="/" end>About</NavLink>
+      <NavLink className={link} to="/installation">Installation</NavLink>
+      <NavLink className={link} to="/database">Database</NavLink>
     </nav>
   )
 }
@@ -24,10 +24,10 @@ export default function App() {
     <BrowserRouter>
       <Nav />
       <Routes>
-        <Route path="/" element={<RunsList />} />
+        <Route path="/" element={<About />} />
+        <Route path="/installation" element={<Installation />} />
+        <Route path="/database" element={<Database />} />
         <Route path="/runs/:id" element={<RunDetail />} />
-        <Route path="/benchmark" element={<Benchmark />} />
-        <Route path="/analytics" element={<Analytics />} />
       </Routes>
     </BrowserRouter>
   )

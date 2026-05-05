@@ -26,6 +26,9 @@ class Run(Base):
     # Populated only for benchmark runs: "swtbench_lite" | "swtbench_verified".
     # Lets analytics split runs by dataset without parsing repo_url.
     dataset: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Original GitHub issue text. Backfilled from the SWE-bench HF dataset for
+    # the featured benchmark DB; null on freshly-created runner rows.
+    problem_statement: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Lifecycle
     status: Mapped[str] = mapped_column(String, default=RunStatus.PENDING)

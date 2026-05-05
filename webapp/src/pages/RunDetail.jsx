@@ -97,6 +97,45 @@ function OracleMatrix({ run }) {
   )
 }
 
+function IssueSection({ run }) {
+  if (!run.problem_statement && !run.github_url) return null
+  return (
+    <div className="card" style={{ padding: 0, marginBottom: 20 }}>
+      <div className="card-header">
+        <h3>GitHub Issue</h3>
+        {run.github_url && (
+          <a
+            href={run.github_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: 12, fontFamily: 'var(--mono)' }}
+          >
+            {run.github_url.replace('https://', '')} ↗
+          </a>
+        )}
+      </div>
+      {run.problem_statement && (
+        <div style={{ padding: 18 }}>
+          <pre
+            className="code-block"
+            style={{
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              fontFamily: 'var(--sans)',
+              fontSize: 13,
+              lineHeight: 1.6,
+              maxHeight: 480,
+              overflowY: 'auto',
+            }}
+          >
+            {run.problem_statement}
+          </pre>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function FunctionCard({ fn }) {
   const [open, setOpen] = useState(false)
 
@@ -236,6 +275,8 @@ export default function RunDetail() {
       )}
 
       {isBench && <OracleMatrix run={run} />}
+
+      <IssueSection run={run} />
 
       {run.functions.length > 0 && (
         <>

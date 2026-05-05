@@ -1,152 +1,34 @@
 """REST API for the test-generation pipeline.
 
-One endpoint creates runs: POST /api/runs with a `source` discriminator
-(`'repo' | 'swtbench'`). The route handler builds an input adapter and
-dispatches to the runner as a background task.
+Run creation lives in the GitHub Action (src/action_entrypoint.py via
+.github/workflows/ggpt.yml). The webapp is read-only and is backed by
+data/featured.db — a small committed SQLite file with the showcase batch.
+The working DB (./ggpt.db) where the runner actually persists results is
+not exposed here.
 
-The other endpoints (list / get / delete / download / status) are pure
-read paths over the unified Run + Function tables — no source-specific
-branching needed.
+  GET /api/runs/{id}                — full run + functions (RunDetail page)
+  GET /api/runs/{id}/status         — lightweight status poll
+  GET /api/runs/{id}/download       — zip of the generated test artifacts
+  GET /api/database/featured-batch  — the showcase batch shown on /database
 """
 import io
 import os
 import zipfile
-from typing import Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from api import store
-from api.db import get_db
-from api.models import RunStatus
+from api.db import get_featured_db
 
 
 router = APIRouter(prefix="/api/runs", tags=["runs"])
-analytics_router = APIRouter(prefix="/api/analytics", tags=["analytics"])
-
-
-@analytics_router.get("/summary")
-def get_analytics_summary(db: Session = Depends(get_db)):
-    return store.summary_stats(db)
-
-
-class RunRequest(BaseModel):
-    """Unified body. `source` selects which adapter to build; only the
-    fields relevant to that source are read."""
-
-    source: Literal["repo", "swtbench"] = "repo"
-
-    # shared
-    provider: str = "deepseek"
-    model: str | None = None
-    preset: str = "default"
-    api_key: str = ""
-
-    # repo (issue-driven)
-    repo_url: str | None = None
-    issue_text: str | None = None      # REQUIRED for source='repo'
-    issue_title: str | None = None     # optional; derived from first line if blank
-    hints_text: str | None = None      # optional PR-review-style hints
-    install_deps: bool = True
-
-    # swtbench
-    dataset: str | None = None         # 'swtbench_lite' | 'swtbench_verified'
-    instance_limit: int | None = None
-    instance_ids: list[str] | None = None
-    use_official_images: bool = True
-
-
-# ── Background task ──────────────────────────────────────────────────────────
-
-def _execute_run(run_id: int, body: RunRequest):
-    """Build the adapter and run it. Errors are caught and persisted as
-    Run.status=ERROR by the runner."""
-    from src.inputs import build_adapter
-    from src.llm import build_config
-    from src.runner import run_batch
-
-    cfg = build_config(body.provider, body.model, api_key=body.api_key or None)
-
-    try:
-        adapter = build_adapter(body.source, cfg=cfg, request=body)
-    except (ValueError, TypeError) as e:
-        with store.session_scope() as db:
-            store.update_run(db, run_id,
-                             status=RunStatus.ERROR,
-                             error_message=f"adapter build failed: {e}")
-        return
-
-    run_batch(adapter, run_id=run_id)
-
-
-# ── Routes ────────────────────────────────────────────────────────────────────
-
-@router.post("/", status_code=201)
-def create_run(
-    body: RunRequest,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-):
-    if body.source == "repo":
-        if not body.repo_url:
-            raise HTTPException(status_code=400, detail="source='repo' requires repo_url")
-        if not body.issue_text or not body.issue_text.strip():
-            raise HTTPException(status_code=400,
-                                detail="source='repo' requires issue_text — the agent is issue-driven")
-    if body.source == "swtbench":
-        if body.dataset not in ("swtbench_lite", "swtbench_verified"):
-            raise HTTPException(status_code=400,
-                                detail="swtbench dataset must be swtbench_lite or swtbench_verified")
-
-    run = store.create_run(db,
-        repo_url=body.repo_url or "",
-        mode=("swtbench" if body.source == "swtbench" else "repo"),
-        dataset=body.dataset if body.source == "swtbench" else None,
-        provider=body.provider,
-        model=body.model,
-        preset=body.preset,
-        status=RunStatus.PENDING,
-    )
-    db.commit()
-    db.refresh(run)
-    background_tasks.add_task(_execute_run, run.id, body)
-    return {"id": run.id, "status": run.status, "source": body.source}
-
-
-def _run_summary(r) -> dict:
-    return {
-        "id": r.id,
-        "repo_url": r.repo_url,
-        "mode": r.mode,
-        "dataset": r.dataset,
-        "benchmark_id": r.benchmark_id,
-        "status": r.status,
-        "progress_current": r.progress_current,
-        "progress_total": r.progress_total,
-        "created_at": r.created_at,
-        "finished_at": r.finished_at,
-        "tests_passed": r.tests_passed,
-        "tests_failed": r.tests_failed,
-        "tests_run": r.tests_run,
-        "provider": r.provider,
-        "f2p": r.f2p,
-        "f2f": r.f2f,
-        "p2f": r.p2f,
-        "p2p": r.p2p,
-        "detected": r.detected,
-        "resolved": r.resolved,
-    }
-
-
-@router.get("/")
-def list_runs(status: str | None = None, db: Session = Depends(get_db)):
-    return [_run_summary(r) for r in store.list_runs(db, status=status)]
+database_router = APIRouter(prefix="/api/database", tags=["database"])
 
 
 @router.get("/{run_id}/status")
-def get_run_status(run_id: int, db: Session = Depends(get_db)):
+def get_run_status(run_id: int, db: Session = Depends(get_featured_db)):
     run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -161,7 +43,7 @@ def get_run_status(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{run_id}/download")
-def download_run(run_id: int, db: Session = Depends(get_db)):
+def download_run(run_id: int, db: Session = Depends(get_featured_db)):
     run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
@@ -186,12 +68,33 @@ def download_run(run_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/{run_id}")
-def get_run(run_id: int, db: Session = Depends(get_db)):
+def get_run(run_id: int, db: Session = Depends(get_featured_db)):
     run = store.get_run(db, run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
     return {
-        **_run_summary(run),
+        "id": run.id,
+        "repo_url": run.repo_url,
+        "mode": run.mode,
+        "dataset": run.dataset,
+        "benchmark_id": run.benchmark_id,
+        "github_url": store.github_issue_url(run.benchmark_id),
+        "problem_statement": run.problem_statement,
+        "status": run.status,
+        "progress_current": run.progress_current,
+        "progress_total": run.progress_total,
+        "created_at": run.created_at,
+        "finished_at": run.finished_at,
+        "tests_passed": run.tests_passed,
+        "tests_failed": run.tests_failed,
+        "tests_run": run.tests_run,
+        "provider": run.provider,
+        "f2p": run.f2p,
+        "f2f": run.f2f,
+        "p2f": run.p2f,
+        "p2p": run.p2p,
+        "detected": run.detected,
+        "resolved": run.resolved,
         "model": run.model,
         "preset": run.preset,
         "output_dir": run.output_dir,
@@ -212,8 +115,6 @@ def get_run(run_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.delete("/{run_id}", status_code=204)
-def delete_run(run_id: int, db: Session = Depends(get_db)):
-    if not store.delete_run(db, run_id):
-        raise HTTPException(status_code=404, detail="Run not found")
-    db.commit()
+@database_router.get("/featured-batch")
+def get_featured_batch(db: Session = Depends(get_featured_db)):
+    return store.featured_batch(db)

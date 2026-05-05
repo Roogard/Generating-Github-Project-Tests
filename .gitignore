@@ -40,6 +40,8 @@ env/
 *.backup-*
 eval_output/
 output/
+# …but the small showcase DB ships with the repo so the website has data.
+!data/featured.db
 
 # Frontend build artifacts
 webapp/node_modules/
