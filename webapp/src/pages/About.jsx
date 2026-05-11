@@ -99,7 +99,6 @@ export default function About() {
         <div style={styles.heroBorder} />
       </motion.section>
 
-{/* ── Cards ── */}
       <div style={styles.grid}>
         {CARDS.map((card, i) => (
           <motion.div

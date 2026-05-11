@@ -86,7 +86,6 @@ export default function Installation() {
   return (
     <div style={styles.outer}>
  
-      {/* ── Header ── */}
       <motion.div
         style={styles.header}
         initial="hidden"
@@ -108,7 +107,6 @@ export default function Installation() {
           </motion.p>
       </motion.div>
  
-      {/* ── Step cards ── */}
       <div style={styles.grid}>
         {STEPS.map((step, i) => (
           <motion.div
@@ -206,7 +204,6 @@ export default function Installation() {
         ))}
       </div>
  
-      {/* ── Footer ── */}
       <motion.div
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}

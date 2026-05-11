@@ -43,8 +43,6 @@ class InputAdapter(ABC):
         """Yield one `RunBatch` per Run row that should be created."""
 
 
-# ── shared helpers used by adapters ────────────────────────────────────────
-
 def force_rmtree(path: str) -> None:
     """rmtree that survives Windows read-only files in `.git/objects/pack/`.
 

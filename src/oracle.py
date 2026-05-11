@@ -70,8 +70,6 @@ class OracleResult:
         return self.f2p > 0 and self.f2f == 0 and self.p2f == 0
 
 
-# ── Applying the gold patch (two strategies) ─────────────────────────────────
-
 @contextmanager
 def _apply_via_git_patch(repo_dir: str, runtime: Runtime, gold_patch: str) -> Iterator[bool]:
     """Flip the source from buggy to fixed for the duration of the `with` block.

@@ -76,8 +76,6 @@ class SwtBenchRuntime(DockerRuntime):
         if install_deps:
             self._ensure_derived_image()
 
-    # ── overrides ───────────────────────────────────────────────────────────
-
     @property
     def python_bin(self) -> str:
         # The official SWT-Bench images install deps into a conda env named
@@ -116,8 +114,6 @@ class SwtBenchRuntime(DockerRuntime):
 
     def in_image_test_file_path(self) -> str | None:
         return self._active_test_file[1] if self._active_test_file else None
-
-    # ── derived-image build ─────────────────────────────────────────────────
 
     def _derived_image_tag(self) -> str:
         """Tag for the per-instance image with our test-runner extras baked in."""
@@ -167,8 +163,6 @@ class SwtBenchRuntime(DockerRuntime):
             )
         self.image = derived
 
-    # ── preamble hooks ──────────────────────────────────────────────────────
-
     def set_active_patch(self, container_patch_path: str | None) -> None:
         self._active_patch = container_patch_path
 
@@ -179,8 +173,6 @@ class SwtBenchRuntime(DockerRuntime):
             return
         in_image = container_path or _IN_IMAGE_TEST_FILE
         self._active_test_file = (os.path.abspath(host_path), in_image)
-
-    # ── exec wrapping ──────────────────────────────────────────────────────
 
     def _build_preamble(self, cwd: str) -> list[str]:
         """Bash commands to run BEFORE the user's command, in order:

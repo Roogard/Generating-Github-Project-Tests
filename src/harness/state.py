@@ -98,8 +98,6 @@ class HarnessContext:
             f.write("[pytest]\n")
 
 
-# ── Test-file I/O ───────────────────────────────────────────────────────────
-
 def write_test_file(ctx: HarnessContext, code: str) -> int:
     """Write LLM output to `ctx.test_file_path`. Strips markdown fences and
     relative imports. Marks the path as Read so subsequent Edits are allowed

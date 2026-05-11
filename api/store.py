@@ -47,8 +47,6 @@ def github_issue_url(benchmark_id: str | None) -> str | None:
     return f"https://github.com/{owner}/{repo}/issues/{issue_no}"
 
 
-# ── session helper ──────────────────────────────────────────────────────────
-
 @contextmanager
 def session_scope() -> Iterator[Session]:
     """Commit on success, rollback on error, always close."""
@@ -62,8 +60,6 @@ def session_scope() -> Iterator[Session]:
     finally:
         db.close()
 
-
-# ── Run CRUD ────────────────────────────────────────────────────────────────
 
 def create_run(db: Session, **fields) -> Run:
     run = Run(**fields)
@@ -124,8 +120,6 @@ def finalize_run(db: Session, run_id: int) -> Run:
     run.tests_run = run.tests_passed + run.tests_failed
     return run
 
-
-# ── featured batch (Database page) ─────────────────────────────────────────
 
 def featured_batch(db: Session) -> dict:
     """The featured SWT-Bench Lite batch shown on /database.

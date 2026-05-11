@@ -71,8 +71,6 @@ class DockerRuntime(Runtime):
                     f"stderr_tail={(r.stderr or '').strip()[-300:]!r}"
                 )
 
-    # ── path translation ────────────────────────────────────────────────────
-
     def translate(self, host_path: str) -> str:
         host_root_norm = self.host_root.replace("\\", "/").rstrip("/")
         host_path_abs = os.path.abspath(host_path).replace("\\", "/")
@@ -83,8 +81,6 @@ class DockerRuntime(Runtime):
             rel = host_path_abs[len(prefix):]
             return f"{_CONTAINER_ROOT}/{rel}"
         return host_path  # outside the mount — caller's problem
-
-    # ── public API ──────────────────────────────────────────────────────────
 
     @property
     def python_bin(self) -> str:
@@ -116,8 +112,6 @@ class DockerRuntime(Runtime):
         # `docker run --rm` cleans up containers automatically; the venv lives
         # inside host_root which the caller (pipeline) removes via rmtree.
         pass
-
-    # ── internals ───────────────────────────────────────────────────────────
 
     def _maybe_translate(self, value: str) -> str:
         # Translate only strings that look like absolute host paths under the

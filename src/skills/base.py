@@ -79,8 +79,6 @@ class Skill:
         raise NotImplementedError
 
 
-# ── Intended-behavior section (Phase B) ─────────────────────────────────────
-
 _ISSUE_BODY_CAP = 3000
 _HINTS_CAP = 800
 

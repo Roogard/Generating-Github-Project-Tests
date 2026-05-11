@@ -44,6 +44,7 @@ output/
 !data/featured.db
 
 # Frontend build artifacts
+node_modules/
 webapp/node_modules/
 webapp/dist/
 

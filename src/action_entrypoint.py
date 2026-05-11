@@ -87,8 +87,6 @@ class Trigger:
     issue_body: str
 
 
-# ── output channel ──────────────────────────────────────────────────────────
-
 def _emit(key: str, value: str) -> None:
     """Append a `key=value` line to `$GITHUB_OUTPUT`. Multi-line values
     use the heredoc form documented at:
@@ -108,8 +106,6 @@ def _emit(key: str, value: str) -> None:
         with open(out_path, "a", encoding="utf-8") as f:
             f.write(f"{key}={value}\n")
 
-
-# ── trigger parsing ─────────────────────────────────────────────────────────
 
 def _parse_trigger() -> Trigger | None:
     """Read `$GITHUB_EVENT_PATH` and figure out what to do.
@@ -156,7 +152,6 @@ def _parse_trigger() -> Trigger | None:
     return None
 
 
-# ── provider selection ─────────────────────────────────────────────────────
 
 def _pick_provider() -> tuple[str, str] | None:
     """Return (provider_name, api_key) for the first provider with a
@@ -169,8 +164,6 @@ def _pick_provider() -> tuple[str, str] | None:
     return None
 
 
-# ── mode handlers ──────────────────────────────────────────────────────────
-
 @dataclass
 class ModeResult:
     """What a mode handler returns to `main`. The action emits one PR with
@@ -181,7 +174,6 @@ class ModeResult:
     fix_applied: bool
 
 
-# ── fix-proposal helpers (Action path only) ────────────────────────────────
 
 def _propose_and_apply_fix(ctx: HarnessContext, workspace: str) -> tuple[list[str], bool]:
     """Run ProposeFixSkill, verify by re-running pytest, return changed
@@ -269,8 +261,6 @@ def _revert_source_edits(workspace: str) -> None:
         capture_output=True, text=True, timeout=10, check=False,
     )
 
-
-# ── mode handlers ──────────────────────────────────────────────────────────
 
 def _run_mode(trigger: Trigger, workspace: str, *, propose_fix: bool) -> ModeResult | None:
     """Run the agent and return its output paths.
@@ -381,7 +371,6 @@ _MODE_HANDLERS: dict[str, Callable[[Trigger, str], ModeResult | None]] = {
 }
 
 
-# ── main ───────────────────────────────────────────────────────────────────
 
 def main() -> int:
     configure_logging()

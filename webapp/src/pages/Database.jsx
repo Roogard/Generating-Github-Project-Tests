@@ -36,7 +36,6 @@ export default function Database() {
   return (
     <div className="page">
 
-      {/* ── Header ── */}
       <div className="page-header" style={{ borderBottom: '0.5px solid #8B6914', paddingBottom: 20, marginBottom: 24 }}>
         <div>
           <h1 className="page-title" style={{ color: '#E8C97A' }}>Database</h1>
@@ -49,7 +48,6 @@ export default function Database() {
         </span>
       </div>
 
-      {/* ── Stat cards ── */}
       <div className="stat-row">
         {/* Resolved — gold accent as primary metric */}
         <div className="stat-card" style={{ borderColor: '#8B6914' }}>
@@ -92,7 +90,6 @@ export default function Database() {
         </div>
       </div>
 
-      {/* ── Table ── */}
       <div className="card" style={{ padding: 0, borderColor: '#2a2310' }}>
         <div className="card-header" style={{ borderBottomColor: '#2a2310' }}>
           <h3>

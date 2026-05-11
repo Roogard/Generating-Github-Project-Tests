@@ -44,8 +44,6 @@ class Runtime(ABC):
         self._tmp_dir = os.path.join(self.host_root, "_runtime_tmp")
         os.makedirs(self._tmp_dir, exist_ok=True)
 
-    # ── abstract: subclasses MUST implement ─────────────────────────────────
-
     @property
     @abstractmethod
     def python_bin(self) -> str:
@@ -76,8 +74,6 @@ class Runtime(ABC):
         translated automatically.
         """
 
-    # ── concrete: shared helpers ────────────────────────────────────────────
-
     def translate(self, host_path: str) -> str:
         """Default identity. Overridden by DockerRuntime."""
         return host_path
@@ -99,8 +95,6 @@ class Runtime(ABC):
         containers if any are kept alive). Default is no-op.
         """
 
-    # ── per-exec preamble state ────────────────────────────────────────────
-    #
     # Two knobs the oracle / test_runner can flip to make each exec see a
     # particular state of /testbed. No-ops on runtimes whose source lives
     # on a writable mount (Local, generic Docker user-repo path) — those

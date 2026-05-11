@@ -38,8 +38,6 @@ _SKIP_DIR_NAMES = {".git", "__pycache__", "node_modules", "venv", ".venv",
                    "dist", "build", ".tox", ".mypy_cache", ".pytest_cache"}
 
 
-# ── Path resolution / safety ────────────────────────────────────────────────
-
 def _resolve(ctx: HarnessContext, path: str) -> Path | None:
     """Resolve a relative-or-absolute path under ctx.repo_dir OR ctx.test_dir.
     Returns None if it escapes both — caller should refuse.
@@ -71,8 +69,6 @@ def _iter_files(root: Path):
             yield Path(r) / name
 
 
-# ── Glob ────────────────────────────────────────────────────────────────────
-
 def _glob(ctx: HarnessContext, pattern: str, path: str | None = None) -> str:
     base = _resolve(ctx, path) if path else Path(ctx.repo_dir).resolve()
     if base is None or not base.is_dir():
@@ -98,8 +94,6 @@ def _glob(ctx: HarnessContext, pattern: str, path: str | None = None) -> str:
         return f"No files match {pattern!r}."
     return "\n".join(p.relative_to(base).as_posix() for p in matches)
 
-
-# ── Grep ────────────────────────────────────────────────────────────────────
 
 def _grep(ctx: HarnessContext, pattern: str, path: str | None = None,
           output_mode: str = "files_with_matches", glob: str = "*",
@@ -185,8 +179,6 @@ def _grep(ctx: HarnessContext, pattern: str, path: str | None = None,
     return "\n".join(content_blocks[:head_limit]) if content_blocks else f"No matches for {pattern!r}."
 
 
-# ── Read ────────────────────────────────────────────────────────────────────
-
 def _read(ctx: HarnessContext, file_path: str, offset: int = 1,
           limit: int = _DEFAULT_READ_LIMIT) -> str:
     target = _resolve(ctx, file_path)
@@ -218,8 +210,6 @@ def _read(ctx: HarnessContext, file_path: str, offset: int = 1,
     suffix = f"\n... ({total - end} more lines below)" if end < total else ""
     return f"{file_path} (lines {start}-{end} of {total}):\n{body}{suffix}"
 
-
-# ── Edit ────────────────────────────────────────────────────────────────────
 
 def _edit(ctx: HarnessContext, file_path: str, old_string: str,
           new_string: str, replace_all: bool = False) -> str:
@@ -256,8 +246,6 @@ def _edit(ctx: HarnessContext, file_path: str, old_string: str,
     return f"edited {file_path} ({n} replacement{'s' if n > 1 else ''})."
 
 
-# ── Write ───────────────────────────────────────────────────────────────────
-
 def _write(ctx: HarnessContext, file_path: str, content: str) -> str:
     target = _resolve(ctx, file_path)
     if target is None:
@@ -284,8 +272,6 @@ def _write(ctx: HarnessContext, file_path: str, content: str) -> str:
     ctx.read_paths.add(str(target))
     return f"wrote {len(content.splitlines())} lines to {file_path}."
 
-
-# ── Public: build the StructuredTool list bound to a context ────────────────
 
 def build_tools(ctx: HarnessContext) -> list[StructuredTool]:
     return [
