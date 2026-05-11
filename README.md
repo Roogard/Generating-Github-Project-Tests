@@ -2,7 +2,7 @@
 
 GGPT is an AI agent that is capable of viewing GitHub issues, creating a test case to recreate the issue, and proposes a code fix for the issue. 
 
-Label any issue with `ggpt` and the agent localizes the relevant code, writes a pytest file that reproduces the bug, and opens a PR closing the issue. Evaluated on [SWT-Bench Lite](https://swtbench.com/) — 300 real GitHub issues — using the F→P / F→F / P→F / P→P transition oracle.
+If you label any issue with `ggpt` the agent localizes the relevant code, writes a pytest file that reproduces the bug, and opens a PR closing the issue. Evaluated on [SWT-Bench Lite](https://swtbench.com/) — 79 real GitHub issues — using the F→P / F→F / P→F / P→P transition oracle. It is worth noting that the current highest success rate on SWT-Bench overall is a 56.2% resolved rate, which is only 8% higher than our run. 
 
 <!-- screenshot: webapp /database page showing per-instance results. Drop into docs/img/database.png and reference here. -->
 
@@ -20,11 +20,11 @@ Run end-to-end on 79 SWT-Bench Lite instances (deepseek-chat, default preset, Ap
 
 `resolved` is the strictest SWT-Bench metric: at least one test transitions fail→pass *and* no test transitions fail→fail or pass→fail. The shipped 79-instance batch is bundled into `data/featured.db`; the live Database tab in the webapp drills into every instance. Reproduce the headline numbers with `python -m scripts.featured_stats`.
 
-## Set it up (4 steps, ~2 minutes)
+## Set up
 
 ### 1. Add the workflow file
 
-Drop this into your repo at **`.github/workflows/ggpt.yml`**:
+Add this as a file into your repo at **`.github/workflows/ggpt.yml`**:
 
 ```yaml
 name: GGPT
@@ -53,7 +53,7 @@ jobs:
 
 **Settings → Secrets and variables → Actions → New repository secret**
 
-Name it one of: `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`. Whichever you set is the one GGPT uses (preference order: deepseek → anthropic → openai).
+Name it one of: `DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`, or `OPENAI_API_KEY`. Whichever you set is the one GGPT uses (preference order: deepseek → anthropic → openai). It is worth noting that all data including API keys is kept strictly in your repo, and no other service including us gets access to any runs or API keys used with GGPT. 
 
 ### 3. Allow Actions to open PRs
 
